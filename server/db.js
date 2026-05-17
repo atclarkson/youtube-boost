@@ -86,4 +86,10 @@ CREATE TABLE IF NOT EXISTS daily_log (
 );
 `);
 
+try {
+  db.exec('ALTER TABLE videos ADD COLUMN view_count INTEGER');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
 module.exports = db;

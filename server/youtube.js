@@ -77,6 +77,7 @@ async function fetchVideoDetails(youtube, videoIds) {
         duration: parseDurationToSeconds(item.contentDetails?.duration || ''),
         categoryId: item.snippet?.categoryId || null,
         tags: item.snippet?.tags || [],
+        viewCount: Number(item.statistics?.viewCount || 0),
         statistics: {
           viewCount: item.statistics?.viewCount || '0',
           likeCount: item.statistics?.likeCount || '0'

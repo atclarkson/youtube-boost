@@ -26,6 +26,8 @@ const sortableColumns = {
   title: 'Title',
   published: 'Published',
   age: 'Age',
+  views: 'Views',
+  performance: 'Performance',
   score: 'Score',
   primary_problem: 'Primary Problem',
   evergreen_potential: 'Evergreen',
@@ -74,6 +76,15 @@ function getScoreClass(score) {
   return 'bg-green-500 text-white';
 }
 
+function isUnscored(video) {
+  return (
+    video.audit_score == null ||
+    Number(video.audit_score) === 0 ||
+    video.primary_problem == null ||
+    video.primary_problem === 'not_scored'
+  );
+}
+
 function getEvergreenClass(value) {
   if (value === 'high') {
     return 'bg-emerald-100 text-emerald-700';
@@ -84,6 +95,14 @@ function getEvergreenClass(value) {
   }
 
   return 'bg-slate-100 text-slate-700';
+}
+
+function formatViews(value) {
+  if (value == null) {
+    return '—';
+  }
+
+  return new Intl.NumberFormat('en-US').format(Number(value));
 }
 
 function parseBreakdown(value) {
@@ -102,7 +121,68 @@ function getVideoAgeMs(value) {
   return Date.now() - new Date(value).getTime();
 }
 
-function getSortValue(video, column) {
+function getAgeInDays(value) {
+  if (!value) {
+    return 1;
+  }
+
+  return Math.max(1, Math.floor(getVideoAgeMs(value) / (1000 * 60 * 60 * 24)));
+}
+
+function getViewsPerDay(video) {
+  if (video.view_count == null) {
+    return null;
+  }
+
+  return Number(video.view_count) / getAgeInDays(video.published_at);
+}
+
+function getMedian(values) {
+  if (values.length === 0) {
+    return null;
+  }
+
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+
+  if (sorted.length % 2 === 0) {
+    return (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+
+  return sorted[middle];
+}
+
+function getPerformanceData(video, medianViewsPerDay) {
+  const viewsPerDay = getViewsPerDay(video);
+
+  if (viewsPerDay == null || medianViewsPerDay == null) {
+    return { label: '—', className: 'text-gray-400', sortValue: -1 };
+  }
+
+  if (viewsPerDay >= medianViewsPerDay * 2) {
+    return {
+      label: 'Strong',
+      className: 'bg-emerald-100 text-emerald-700',
+      sortValue: 3
+    };
+  }
+
+  if (viewsPerDay >= medianViewsPerDay * 0.5) {
+    return {
+      label: 'Average',
+      className: 'bg-yellow-100 text-yellow-700',
+      sortValue: 2
+    };
+  }
+
+  return {
+    label: 'Weak',
+    className: 'bg-red-100 text-red-700',
+    sortValue: 1
+  };
+}
+
+function getSortValue(video, column, medianViewsPerDay) {
   switch (column) {
     case 'title':
       return video.title_current || '';
@@ -110,8 +190,12 @@ function getSortValue(video, column) {
       return video.published_at || '';
     case 'age':
       return getVideoAgeMs(video.published_at);
+    case 'views':
+      return video.view_count == null ? -1 : Number(video.view_count);
+    case 'performance':
+      return getPerformanceData(video, medianViewsPerDay).sortValue;
     case 'score':
-      return Number(video.audit_score || 0);
+      return isUnscored(video) ? -1 : Number(video.audit_score || 0);
     case 'primary_problem':
       return problemLabels[video.primary_problem] || 'Not Scored';
     case 'evergreen_potential':
@@ -125,13 +209,13 @@ function getSortValue(video, column) {
   }
 }
 
-function compareVideos(a, b, column, direction) {
+function compareVideos(a, b, column, direction, medianViewsPerDay) {
   if (column === 'actions') {
     return 0;
   }
 
-  const left = getSortValue(a, column);
-  const right = getSortValue(b, column);
+  const left = getSortValue(a, column, medianViewsPerDay);
+  const right = getSortValue(b, column, medianViewsPerDay);
 
   if (typeof left === 'number' && typeof right === 'number') {
     return direction === 'asc' ? left - right : right - left;
@@ -229,8 +313,15 @@ function Audit() {
       }
 
       return true;
-    })
-    .sort((left, right) => compareVideos(left, right, sortColumn, sortDirection));
+    });
+  const medianViewsPerDay = getMedian(
+    visibleVideos
+      .map((video) => getViewsPerDay(video))
+      .filter((value) => value != null)
+  );
+  const sortedVideos = [...visibleVideos].sort((left, right) =>
+    compareVideos(left, right, sortColumn, sortDirection, medianViewsPerDay)
+  );
 
   if (loading) {
     return <h1 className="text-3xl font-semibold text-gray-900">Loading Audit...</h1>;
@@ -312,10 +403,12 @@ function Audit() {
             </tr>
           </thead>
           <tbody>
-            {visibleVideos.map((video, index) => {
+            {sortedVideos.map((video, index) => {
               const isExpanded = expandedVideoId === video.id;
               const breakdown = parseBreakdown(video.audit_score_breakdown);
               const score = Number(video.audit_score || 0);
+              const unscored = isUnscored(video);
+              const performance = getPerformanceData(video, medianViewsPerDay);
               const rowClass = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
 
               return (
@@ -340,10 +433,26 @@ function Audit() {
                     </td>
                     <td className="px-4 py-4 align-top text-sm text-gray-600">{formatPublishedDate(video.published_at)}</td>
                     <td className="px-4 py-4 align-top text-sm text-gray-600">{formatAge(video.published_at)}</td>
+                    <td className="px-4 py-4 align-top text-sm text-gray-600">{formatViews(video.view_count)}</td>
                     <td className="px-4 py-4 align-top">
-                      <span className={`inline-flex rounded-full px-3 py-1 text-sm font-semibold ${getScoreClass(score)}`}>
-                        {video.audit_score ?? '0'}
-                      </span>
+                      {performance.label === '—' ? (
+                        <span className="text-sm text-gray-400">—</span>
+                      ) : (
+                        <span className={`inline-flex rounded-full px-3 py-1 text-sm font-medium ${performance.className}`}>
+                          {performance.label}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-4 align-top">
+                      {unscored ? (
+                        <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600">
+                          N/A
+                        </span>
+                      ) : (
+                        <span className={`inline-flex rounded-full px-3 py-1 text-sm font-semibold ${getScoreClass(score)}`}>
+                          {video.audit_score}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-4 align-top text-sm text-gray-700">
                       {problemLabels[video.primary_problem] || 'Not Scored'}
@@ -368,7 +477,7 @@ function Audit() {
                   </tr>
                   {isExpanded ? (
                     <tr key={`${video.id}-expanded`} className="bg-gray-50">
-                      <td colSpan="9" className="px-4 py-4">
+                      <td colSpan="11" className="px-4 py-4">
                         <div className="space-y-4 rounded-lg bg-gray-50 p-4">
                           <div>
                             <strong className="text-sm text-gray-900">Score Breakdown</strong>
@@ -448,6 +557,9 @@ function Audit() {
                               <span>{video.audit_score ? 'Rescore' : 'Score'}</span>
                             </button>
                           </div>
+                          <p className="text-sm italic text-gray-500">
+                            Performance scoring will improve in Phase 4 when watch time and CTR data is available from YouTube Analytics.
+                          </p>
                         </div>
                       </td>
                     </tr>

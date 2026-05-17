@@ -38,6 +38,7 @@ const upsertVideo = db.prepare(`
     duration_seconds,
     category_id,
     tags,
+    view_count,
     last_synced_at
   ) VALUES (
     @youtube_id,
@@ -49,6 +50,7 @@ const upsertVideo = db.prepare(`
     @duration_seconds,
     @category_id,
     @tags,
+    @view_count,
     @last_synced_at
   )
   ON CONFLICT(youtube_id) DO UPDATE SET
@@ -60,6 +62,7 @@ const upsertVideo = db.prepare(`
     duration_seconds = excluded.duration_seconds,
     category_id = excluded.category_id,
     tags = excluded.tags,
+    view_count = excluded.view_count,
     last_synced_at = excluded.last_synced_at
 `);
 
@@ -90,6 +93,7 @@ router.get('/sync', async (req, res) => {
           duration_seconds: video.duration,
           category_id: video.categoryId,
           tags: JSON.stringify(video.tags || []),
+          view_count: video.viewCount,
           last_synced_at: now
         });
       }
