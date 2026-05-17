@@ -5,6 +5,7 @@ function Dashboard() {
   const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [scoringAll, setScoringAll] = useState(false);
   const [totalVideos, setTotalVideos] = useState(0);
   const [message, setMessage] = useState('');
 
@@ -37,17 +38,30 @@ function Dashboard() {
   async function handleSync() {
     try {
       setSyncing(true);
-      setMessage('Syncing videos and running audit scoring. This will take a while.');
+      setMessage('Syncing videos from YouTube.');
 
       const response = await axios.get('/api/videos/sync');
-      setMessage(
-        `Sync complete. Synced ${response.data.synced} videos and scored ${response.data.scored} videos.`
-      );
+      setMessage(`Sync complete. Synced ${response.data.synced} videos.`);
       await loadDashboard();
     } catch (error) {
       setMessage(error.response?.data?.error || 'Failed to sync videos.');
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function handleScoreAll() {
+    try {
+      setScoringAll(true);
+      setMessage('Scoring all videos. This will take a while.');
+
+      const response = await axios.post('/api/videos/score-all');
+      setMessage(`Scoring complete. Scored ${response.data.scored} videos.`);
+      await loadDashboard();
+    } catch (error) {
+      setMessage(error.response?.data?.error || 'Failed to score videos.');
+    } finally {
+      setScoringAll(false);
     }
   }
 
@@ -79,7 +93,16 @@ function Dashboard() {
                   disabled={syncing}
                   className="rounded bg-blue-600 px-4 py-2 text-white transition hover:bg-blue-700 disabled:cursor-wait disabled:bg-blue-400"
                 >
-                  {syncing ? 'Syncing + Scoring...' : 'Sync Videos'}
+                  {syncing ? 'Syncing...' : 'Sync Videos'}
+                </button>
+              </div>
+              <div>
+                <button
+                  onClick={handleScoreAll}
+                  disabled={scoringAll}
+                  className="rounded bg-slate-800 px-4 py-2 text-white transition hover:bg-slate-900 disabled:cursor-wait disabled:bg-slate-500"
+                >
+                  {scoringAll ? 'Scoring...' : 'Score All Videos'}
                 </button>
               </div>
               <p className="text-sm text-gray-500">

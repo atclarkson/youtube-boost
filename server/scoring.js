@@ -25,6 +25,26 @@ function clampScore(score) {
   return Math.max(0, Math.min(10, score));
 }
 
+function clampInternalScore(score) {
+  return Math.max(1, Math.min(100, Math.round(score)));
+}
+
+function getContentType(durationSeconds) {
+  return Number(durationSeconds || 0) < 180 ? 'short' : 'long_form';
+}
+
+function getEra(publishedAt) {
+  if (!publishedAt) {
+    return 'unknown';
+  }
+
+  return String(new Date(publishedAt).getUTCFullYear());
+}
+
+function toDisplayScore(internalScore) {
+  return Math.round(internalScore) / 10;
+}
+
 function getAgeBonus(publishedAt) {
   if (!publishedAt) {
     return 0;
@@ -45,6 +65,10 @@ function getAgeBonus(publishedAt) {
   return -1;
 }
 
+function getInternalAgeBonus(publishedAt) {
+  return getAgeBonus(publishedAt) * 10;
+}
+
 function getFallbackScoreResult() {
   return {
     audit_score: 0,
@@ -52,13 +76,17 @@ function getFallbackScoreResult() {
     evergreen_potential: 'low',
     primary_problem: 'good_as_is',
     audit_score_breakdown: {
+      internal_score: 0,
       base_score: 0,
       age_bonus: 0,
       final_score: 0,
       ctr_assessment: 'Scoring failed',
       keyword_quality: 'Scoring failed',
       title_clarity: 'Scoring failed',
-      evergreen_topic: 'Scoring failed'
+      evergreen_topic: 'Scoring failed',
+      content_type: 'unknown',
+      era: 'unknown',
+      relative_performance_note: 'Scoring failed'
     }
   };
 }
@@ -72,6 +100,8 @@ function buildPrompt(video) {
       return [];
     }
   })();
+  const contentType = getContentType(video.duration_seconds);
+  const era = getEra(video.published_at);
 
   return `
 You are auditing YouTube videos for reoptimization potential.
@@ -82,59 +112,79 @@ Video data:
 - Published at: ${JSON.stringify(video.published_at || '')}
 - Duration seconds: ${JSON.stringify(video.duration_seconds)}
 - Tags: ${JSON.stringify(tags)}
+- Content type: ${JSON.stringify(contentType)}
+- Era: ${JSON.stringify(era)}
 
 Instructions:
-- Score the video from 1 to 10 for reoptimization potential as "base_score".
+- Score the video from 1 to 100 for reoptimization potential as "internal_score".
+- Compare this video only against other YouTube videos of the same content_type and era, not YouTube in general.
 - Do not apply age weighting yourself.
-- Age weighting happens after your base score:
-  - older than 3 years: +2
-  - 1 to 3 years: +1
-  - under 1 year: -1
+- Age weighting happens after your internal score:
+  - older than 3 years: +20
+  - 1 to 3 years: +10
+  - under 1 year: -10
 - Identify primary_problem as exactly one of:
   low_ctr, poor_discoverability, dated_language, weak_keywords, good_as_is
 - Identify evergreen_potential as exactly one of:
   high, medium, low
 - Write audit_score_reason in 2 to 3 sentences explaining the score.
+- Write relative_performance_note as exactly 1 sentence comparing this video's title/metadata quality to a typical video of the same content_type and era.
 - Return score_breakdown with exactly these fields:
-  base_score, age_bonus, final_score, ctr_assessment, keyword_quality, title_clarity, evergreen_topic
+  internal_score, base_score, age_bonus, final_score, ctr_assessment, keyword_quality, title_clarity, evergreen_topic, content_type, era, relative_performance_note
 
 Return valid JSON only with this shape:
 {
-  "base_score": number,
+  "internal_score": number,
   "primary_problem": "low_ctr" | "poor_discoverability" | "dated_language" | "weak_keywords" | "good_as_is",
   "evergreen_potential": "high" | "medium" | "low",
   "audit_score_reason": "string",
+  "relative_performance_note": "string",
   "score_breakdown": {
+    "internal_score": number,
     "base_score": number,
     "age_bonus": number,
     "final_score": number,
     "ctr_assessment": "string",
     "keyword_quality": "string",
     "title_clarity": "string",
-    "evergreen_topic": "string"
+    "evergreen_topic": "string",
+    "content_type": "short" | "long_form",
+    "era": "string",
+    "relative_performance_note": "string"
   }
 }
 `.trim();
 }
 
-function normalizeScoreResult(parsed, ageBonus) {
-  const baseScore = clampScore(Number(parsed.base_score || 0));
-  const finalScore = clampScore(baseScore + ageBonus);
+function normalizeScoreResult(parsed, video) {
+  const internalAgeBonus = getInternalAgeBonus(video.published_at);
+  const baseInternalScore = clampInternalScore(Number(parsed.internal_score || 0));
+  const finalInternalScore = clampInternalScore(baseInternalScore + internalAgeBonus);
   const scoreBreakdown = parsed.score_breakdown || {};
+  const contentType = getContentType(video.duration_seconds);
+  const era = getEra(video.published_at);
+  const relativePerformanceNote =
+    parsed.relative_performance_note ||
+    scoreBreakdown.relative_performance_note ||
+    '';
 
   return {
-    audit_score: finalScore,
+    audit_score: toDisplayScore(finalInternalScore),
     audit_score_reason: parsed.audit_score_reason || 'Scoring failed',
     evergreen_potential: parsed.evergreen_potential || 'low',
     primary_problem: parsed.primary_problem || 'good_as_is',
     audit_score_breakdown: {
-      base_score: baseScore,
-      age_bonus: ageBonus,
-      final_score: finalScore,
+      internal_score: finalInternalScore,
+      base_score: toDisplayScore(baseInternalScore),
+      age_bonus: internalAgeBonus / 10,
+      final_score: toDisplayScore(finalInternalScore),
       ctr_assessment: scoreBreakdown.ctr_assessment || '',
       keyword_quality: scoreBreakdown.keyword_quality || '',
       title_clarity: scoreBreakdown.title_clarity || '',
-      evergreen_topic: scoreBreakdown.evergreen_topic || ''
+      evergreen_topic: scoreBreakdown.evergreen_topic || '',
+      content_type: scoreBreakdown.content_type || contentType,
+      era: scoreBreakdown.era || era,
+      relative_performance_note: relativePerformanceNote
     }
   };
 }
@@ -142,7 +192,7 @@ function normalizeScoreResult(parsed, ageBonus) {
 async function scoreVideo(video) {
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-5',
       max_tokens: 500,
       messages: [
         {
@@ -156,12 +206,15 @@ async function scoreVideo(video) {
       .filter((block) => block.type === 'text')
       .map((block) => block.text)
       .join('');
+    const cleaned = text
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```$/, '')
+      .trim();
 
     try {
-      const parsed = JSON.parse(text);
-      const ageBonus = getAgeBonus(video.published_at);
-
-      return normalizeScoreResult(parsed, ageBonus);
+      const parsed = JSON.parse(cleaned);
+      return normalizeScoreResult(parsed, video);
     } catch (error) {
       console.error(`Failed to parse Claude scoring JSON for video ${video.youtube_id}:`, error);
       console.error('Claude raw response:', text);
@@ -173,8 +226,9 @@ async function scoreVideo(video) {
   }
 }
 
-async function scoreAllVideos() {
-  const videos = db.prepare('SELECT * FROM videos ORDER BY published_at ASC').all();
+async function scoreAllVideos(videosToScore) {
+  const videos =
+    videosToScore || db.prepare('SELECT * FROM videos ORDER BY published_at ASC').all();
   let scored = 0;
 
   for (let index = 0; index < videos.length; index += 1) {

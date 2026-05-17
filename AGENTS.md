@@ -37,7 +37,7 @@ If a task would require violating ToS to implement, say so clearly and suggest a
 | Backend   | Express.js               | Port 3005                                     |
 | Frontend  | React 18 + Vite          |                                               |
 | Database  | SQLite                   | via better-sqlite3, synchronous API preferred |
-| AI        | Anthropic Claude API     | Model: claude-sonnet-4-20250514               |
+| AI        | Anthropic Claude API     | Model: claude-sonnet-4-5                      |
 | YouTube   | YouTube Data API v3      | video list, update                            |
 | Analytics | YouTube Analytics API v3 | reports endpoint                              |
 | Auth      | Google OAuth 2.0         | token stored in .env or local token file      |
@@ -191,6 +191,7 @@ CREATE TABLE IF NOT EXISTS daily_log (
 - Age is a **multiplier** on the score — older videos rank significantly higher as candidates
 - Score components: age weight, CTR gap vs channel average, impression volume, evergreen topic potential, watch time retention
 - Score breakdown must be stored as JSON and displayed in the UI per video
+- `audit_score_breakdown` must include: `internal_score` (1-100), `content_type`, `era`, `relative_performance_note`, `base_score`, `age_bonus`, `final_score`, `ctr_assessment`, `keyword_quality`, `title_clarity`, `evergreen_topic`
 
 ### Daily Batch
 

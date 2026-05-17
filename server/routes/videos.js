@@ -1,10 +1,31 @@
 const express = require('express');
 
 const db = require('../db');
-const { scoreAllVideos } = require('../scoring');
+const { scoreAllVideos, scoreVideo } = require('../scoring');
 const { getAllVideos } = require('../youtube');
 
 const router = express.Router();
+const selectVideosForDevScoreLimit = db.prepare(`
+  SELECT *
+  FROM videos
+  ORDER BY published_at ASC
+  LIMIT ?
+`);
+const selectVideoByYoutubeId = db.prepare(`
+  SELECT *
+  FROM videos
+  WHERE youtube_id = ?
+`);
+const updateVideoScore = db.prepare(`
+  UPDATE videos
+  SET
+    audit_score = @audit_score,
+    audit_score_breakdown = @audit_score_breakdown,
+    audit_score_reason = @audit_score_reason,
+    evergreen_potential = @evergreen_potential,
+    primary_problem = @primary_problem
+  WHERE id = @id
+`);
 
 const upsertVideo = db.prepare(`
   INSERT INTO videos (
@@ -42,6 +63,16 @@ const upsertVideo = db.prepare(`
     last_synced_at = excluded.last_synced_at
 `);
 
+function getVideosForScoreAll() {
+  const devScoreLimit = Number.parseInt(process.env.DEV_SCORE_LIMIT, 10);
+
+  if (Number.isInteger(devScoreLimit) && devScoreLimit > 0) {
+    return selectVideosForDevScoreLimit.all(devScoreLimit);
+  }
+
+  return undefined;
+}
+
 router.get('/sync', async (req, res) => {
   try {
     const videos = await getAllVideos();
@@ -66,9 +97,7 @@ router.get('/sync', async (req, res) => {
 
     syncTransaction(videos);
 
-    const scoringResult = await scoreAllVideos();
-
-    res.json({ synced: videos.length, scored: scoringResult.scored });
+    res.json({ synced: videos.length });
   } catch (error) {
     console.error('Failed to sync YouTube videos:', error);
     const isAuthError =
@@ -78,6 +107,45 @@ router.get('/sync', async (req, res) => {
     res
       .status(isAuthError ? 401 : 500)
       .json({ error: error.message || 'Failed to sync videos.' });
+  }
+});
+
+router.post('/score-all', async (req, res) => {
+  try {
+    const scoringResult = await scoreAllVideos(getVideosForScoreAll());
+
+    res.json({ scored: scoringResult.scored });
+  } catch (error) {
+    console.error('Failed to score all videos:', error);
+    res.status(500).json({ error: error.message || 'Failed to score videos.' });
+  }
+});
+
+router.post('/:youtubeId/score', async (req, res) => {
+  try {
+    const video = selectVideoByYoutubeId.get(req.params.youtubeId);
+
+    if (!video) {
+      return res.status(404).json({ error: 'Video not found.' });
+    }
+
+    const result = await scoreVideo(video);
+
+    updateVideoScore.run({
+      id: video.id,
+      audit_score: result.audit_score,
+      audit_score_breakdown: JSON.stringify(result.audit_score_breakdown),
+      audit_score_reason: result.audit_score_reason,
+      evergreen_potential: result.evergreen_potential,
+      primary_problem: result.primary_problem
+    });
+
+    const updatedVideo = selectVideoByYoutubeId.get(req.params.youtubeId);
+
+    res.json(updatedVideo);
+  } catch (error) {
+    console.error('Failed to score video:', error);
+    res.status(500).json({ error: error.message || 'Failed to score video.' });
   }
 });
 
