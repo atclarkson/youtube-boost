@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS videos (
 CREATE TABLE IF NOT EXISTS optimizations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   video_id INTEGER REFERENCES videos(id),
-  status TEXT DEFAULT 'pending',    -- pending | approved | applied | reverted
+  status TEXT DEFAULT 'pending',    -- pending | approved | applied | reverted | skipped
   title_option_1 TEXT,
   title_option_1_reasoning TEXT,
   title_option_2 TEXT,
