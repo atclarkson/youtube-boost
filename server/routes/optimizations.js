@@ -287,7 +287,7 @@ router.post('/:id/apply', async (req, res) => {
     );
 
     if (!result.success) {
-      return res.status(500).json({ error: result.error || 'Failed to apply optimization.' });
+      return res.status(400).json({ error: result.error || 'Failed to apply optimization.' });
     }
 
     updateOptimizationApplied.run(optimizationId);

@@ -131,9 +131,16 @@ async function updateVideo(youtubeId, title, description) {
     return { success: true };
   } catch (error) {
     console.error('Failed to update YouTube video metadata:', error);
+    const reason =
+      error?.errors?.[0]?.reason ||
+      error?.response?.data?.error?.errors?.[0]?.reason ||
+      error?.response?.data?.error?.message;
+
     return {
       success: false,
-      error: error.message || 'Failed to update video.'
+      error: reason
+        ? `YouTube API error: ${reason}`
+        : error.message || 'Failed to update video.'
     };
   }
 }
