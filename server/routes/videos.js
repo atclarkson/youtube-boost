@@ -1,6 +1,7 @@
 const express = require('express');
 
 const db = require('../db');
+const { scoreAllVideos } = require('../scoring');
 const { getAllVideos } = require('../youtube');
 
 const router = express.Router();
@@ -65,7 +66,9 @@ router.get('/sync', async (req, res) => {
 
     syncTransaction(videos);
 
-    res.json({ synced: videos.length });
+    const scoringResult = await scoreAllVideos();
+
+    res.json({ synced: videos.length, scored: scoringResult.scored });
   } catch (error) {
     console.error('Failed to sync YouTube videos:', error);
     const isAuthError =
@@ -75,6 +78,42 @@ router.get('/sync', async (req, res) => {
     res
       .status(isAuthError ? 401 : 500)
       .json({ error: error.message || 'Failed to sync videos.' });
+  }
+});
+
+router.get('/audit', (req, res) => {
+  try {
+    const videos = db.prepare(`
+      SELECT
+        videos.*,
+        COALESCE(
+          CASE
+            WHEN videos.audit_score IS NULL THEN 'not_scored'
+            WHEN (
+              SELECT status
+              FROM optimizations
+              WHERE optimizations.video_id = videos.id
+              ORDER BY optimizations.id DESC
+              LIMIT 1
+            ) IN ('applied', 'reverted') THEN (
+              SELECT status
+              FROM optimizations
+              WHERE optimizations.video_id = videos.id
+              ORDER BY optimizations.id DESC
+              LIMIT 1
+            )
+            ELSE 'pending'
+          END,
+          'pending'
+        ) AS audit_status
+      FROM videos
+      ORDER BY audit_score DESC, published_at ASC
+    `).all();
+
+    res.json(videos);
+  } catch (error) {
+    console.error('Failed to fetch audit videos:', error);
+    res.status(500).json({ error: 'Failed to fetch audit videos.' });
   }
 });
 

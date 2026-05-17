@@ -17,6 +17,7 @@ The owner is a solo developer/content creator. Code should be practical, readabl
 **Never suggest, generate, or implement anything that violates YouTube or Google Terms of Service.**
 
 This means:
+
 - All YouTube metadata changes must go through the official YouTube Data API v3
 - No web scraping of YouTube
 - No automation that applies changes without explicit user approval
@@ -30,20 +31,20 @@ If a task would require violating ToS to implement, say so clearly and suggest a
 
 ## Tech Stack
 
-| Layer | Technology | Notes |
-|---|---|---|
-| Runtime | Node.js 20+ | |
-| Backend | Express.js | Port 3005 |
-| Frontend | React 18 + Vite | |
-| Database | SQLite | via better-sqlite3, synchronous API preferred |
-| AI | Anthropic Claude API | Model: claude-sonnet-4-20250514 |
-| YouTube | YouTube Data API v3 | video list, update |
-| Analytics | YouTube Analytics API v3 | reports endpoint |
-| Auth | Google OAuth 2.0 | token stored in .env or local token file |
-| Charts | Recharts | |
-| Scheduler | node-cron | daily snapshot job |
-| HTTP | Axios | frontend API calls |
-| Dev | Concurrently | boots server + client together |
+| Layer     | Technology               | Notes                                         |
+| --------- | ------------------------ | --------------------------------------------- |
+| Runtime   | Node.js 20+              |                                               |
+| Backend   | Express.js               | Port 3005                                     |
+| Frontend  | React 18 + Vite          |                                               |
+| Database  | SQLite                   | via better-sqlite3, synchronous API preferred |
+| AI        | Anthropic Claude API     | Model: claude-sonnet-4-20250514               |
+| YouTube   | YouTube Data API v3      | video list, update                            |
+| Analytics | YouTube Analytics API v3 | reports endpoint                              |
+| Auth      | Google OAuth 2.0         | token stored in .env or local token file      |
+| Charts    | Recharts                 |                                               |
+| Scheduler | node-cron                | daily snapshot job                            |
+| HTTP      | Axios                    | frontend API calls                            |
+| Dev       | Concurrently             | boots server + client together                |
 
 ---
 
@@ -88,6 +89,7 @@ youtube-boost/
 ## Database Schema
 
 ### `videos`
+
 ```sql
 CREATE TABLE IF NOT EXISTS videos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,6 +113,7 @@ CREATE TABLE IF NOT EXISTS videos (
 ```
 
 ### `optimizations`
+
 ```sql
 CREATE TABLE IF NOT EXISTS optimizations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -130,6 +133,7 @@ CREATE TABLE IF NOT EXISTS optimizations (
 ```
 
 ### `monitoring_snapshots`
+
 ```sql
 CREATE TABLE IF NOT EXISTS monitoring_snapshots (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -152,6 +156,7 @@ CREATE TABLE IF NOT EXISTS monitoring_snapshots (
 ```
 
 ### `ai_verdicts`
+
 ```sql
 CREATE TABLE IF NOT EXISTS ai_verdicts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,6 +170,7 @@ CREATE TABLE IF NOT EXISTS ai_verdicts (
 ```
 
 ### `daily_log`
+
 ```sql
 CREATE TABLE IF NOT EXISTS daily_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -180,29 +186,34 @@ CREATE TABLE IF NOT EXISTS daily_log (
 ## Key Behaviors
 
 ### Video Scoring
+
 - All videos are pulled regardless of age
 - Age is a **multiplier** on the score — older videos rank significantly higher as candidates
 - Score components: age weight, CTR gap vs channel average, impression volume, evergreen topic potential, watch time retention
 - Score breakdown must be stored as JSON and displayed in the UI per video
 
 ### Daily Batch
+
 - No hard daily limit on approvals
 - UI must show a warning banner when approvals in the current calendar day exceed 5
 - Warning text: "You've approved X optimizations today. Applying too many at once can cause temporary ranking dips as YouTube re-indexes everything simultaneously."
 - Warning does not block further approvals
 
 ### Title Generation
+
 - Claude always returns exactly 3 title options per video
 - Each option includes: the title, a target search intent, and reasoning for why it should work for English-speaking audiences
 - User must explicitly choose one (or edit it) before anything is applied to YouTube
 
 ### Monitoring
+
 - Snapshots pulled daily for 30 days after an optimization is applied
 - Geo breakdown tracks: US, GB, CA, AU, NZ specifically
 - Search traffic source isolated from total views
 - At day 30, Claude receives full before/after dataset and returns a verdict
 
 ### Revert
+
 - Original title and description always stored in `videos.title_original` and `videos.description_original`
 - Revert button available at any time in History view
 - Revert applies original values back via YouTube Data API and logs the action
@@ -229,6 +240,15 @@ ANTHROPIC_API_KEY=
 - Comments on anything non-obvious
 - Keep route handlers thin — business logic lives in the service files (youtube.js, analytics.js, scoring.js, etc.)
 - SQLite calls use synchronous better-sqlite3 API (no async needed)
+
+---
+
+## UI Conventions
+
+- Always use Tailwind CSS for styling. Never write raw CSS.
+- Audit table column headers must be sortable (click to sort asc/desc)
+- Audit page must have a content type filter: Shorts (under 180 seconds), Long Form (180 seconds and over), Both — this filters the displayed rows
+- All tables in the app should follow this sortable pattern
 
 ---
 
