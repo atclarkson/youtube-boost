@@ -10,6 +10,7 @@ const optimizationsRoutes = require('./routes/optimizations');
 const monitoringRoutes = require('./routes/monitoring');
 const verdictsRoutes = require('./routes/verdicts');
 require('./db');
+require('./monitor');
 
 const app = express();
 const port = 3005;

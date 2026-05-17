@@ -211,6 +211,7 @@ CREATE TABLE IF NOT EXISTS daily_log (
 - Snapshots pulled daily for 30 days after an optimization is applied
 - Geo breakdown tracks: US, GB, CA, AU, NZ specifically
 - Search traffic source isolated from total views
+- Impressions and CTR are **not** available via the YouTube Analytics API in this app's query model and must never be requested as metrics
 - At day 30, Claude receives full before/after dataset and returns a verdict
 
 ### Revert

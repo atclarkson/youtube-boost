@@ -92,4 +92,40 @@ try {
   // Ignore duplicate-column errors so existing databases keep booting cleanly.
 }
 
+try {
+  db.exec('ALTER TABLE monitoring_snapshots ADD COLUMN avg_view_percentage REAL');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
+try {
+  db.exec('ALTER TABLE monitoring_snapshots ADD COLUMN watch_time_us REAL');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
+try {
+  db.exec('ALTER TABLE monitoring_snapshots ADD COLUMN watch_time_gb REAL');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
+try {
+  db.exec('ALTER TABLE monitoring_snapshots ADD COLUMN watch_time_ca REAL');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
+try {
+  db.exec('ALTER TABLE monitoring_snapshots ADD COLUMN watch_time_au REAL');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
+try {
+  db.exec('ALTER TABLE monitoring_snapshots ADD COLUMN watch_time_nz REAL');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
 module.exports = db;
