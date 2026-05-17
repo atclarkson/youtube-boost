@@ -1,7 +1,7 @@
 const express = require('express');
 
 const db = require('../db');
-const { takeSnapshot } = require('../monitor');
+const { getSnapshotDelta, takeSnapshot } = require('../monitor');
 
 const router = express.Router();
 
@@ -117,8 +117,9 @@ router.get('/:videoId', (req, res) => {
 
     const optimization = selectLatestOptimizationForVideo.get(req.params.videoId) || null;
     const snapshots = selectSnapshotsForVideo.all(req.params.videoId);
+    const delta = getSnapshotDelta(req.params.videoId);
 
-    res.json({ video, optimization, snapshots });
+    res.json({ video, optimization, snapshots, delta });
   } catch (error) {
     console.error('Failed to fetch monitoring detail:', error);
     res.status(500).json({ error: 'Failed to fetch monitoring detail.' });

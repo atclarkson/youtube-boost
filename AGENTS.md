@@ -155,6 +155,33 @@ CREATE TABLE IF NOT EXISTS monitoring_snapshots (
 );
 ```
 
+### `baseline_snapshots`
+
+```sql
+CREATE TABLE IF NOT EXISTS baseline_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  video_id INTEGER REFERENCES videos(id),
+  youtube_id TEXT,
+  captured_at TEXT,
+  views INTEGER,
+  watch_time_minutes REAL,
+  avg_view_duration REAL,
+  avg_view_percentage REAL,
+  search_views INTEGER,
+  search_watch_time REAL,
+  views_us INTEGER,
+  views_gb INTEGER,
+  views_ca INTEGER,
+  views_au INTEGER,
+  views_nz INTEGER,
+  watch_time_us REAL,
+  watch_time_gb REAL,
+  watch_time_ca REAL,
+  watch_time_au REAL,
+  watch_time_nz REAL
+);
+```
+
 ### `ai_verdicts`
 
 ```sql
@@ -209,6 +236,8 @@ CREATE TABLE IF NOT EXISTS daily_log (
 ### Monitoring
 
 - Snapshots pulled daily for 30 days after an optimization is applied
+- Monitoring uses a lifetime-delta model: baseline totals are captured once before applying an optimization, then daily monitoring snapshots store absolute lifetime totals
+- Improvement is calculated at query time as `latest monitoring snapshot - baseline snapshot`, not by storing rolling daily deltas
 - Geo breakdown tracks: US, GB, CA, AU, NZ specifically
 - Search traffic source isolated from total views
 - Impressions and CTR are **not** available via the YouTube Analytics API in this app's query model and must never be requested as metrics

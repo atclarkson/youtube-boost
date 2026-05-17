@@ -17,6 +17,14 @@ async function runQuery(params) {
   return response.data.rows || [];
 }
 
+function formatDate(value) {
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+function getTodayDate() {
+  return formatDate(new Date());
+}
+
 async function getVideoAnalytics(youtubeId, startDate, endDate) {
   const rows = await runQuery({
     ids: 'channel==MINE',
@@ -96,8 +104,27 @@ async function getVideoSearchAnalytics(youtubeId, startDate, endDate) {
   };
 }
 
+async function getVideoLifetimeAnalytics(youtubeId, publishedAt) {
+  return getVideoAnalytics(youtubeId, formatDate(publishedAt), getTodayDate());
+}
+
+async function getVideoLifetimeGeoAnalytics(youtubeId, publishedAt) {
+  return getVideoGeoAnalytics(youtubeId, formatDate(publishedAt), getTodayDate());
+}
+
+async function getVideoLifetimeSearchAnalytics(youtubeId, publishedAt) {
+  return getVideoSearchAnalytics(
+    youtubeId,
+    formatDate(publishedAt),
+    getTodayDate()
+  );
+}
+
 module.exports = {
   getVideoAnalytics,
   getVideoGeoAnalytics,
-  getVideoSearchAnalytics
+  getVideoSearchAnalytics,
+  getVideoLifetimeAnalytics,
+  getVideoLifetimeGeoAnalytics,
+  getVideoLifetimeSearchAnalytics
 };

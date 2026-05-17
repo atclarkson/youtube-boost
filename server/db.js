@@ -67,6 +67,29 @@ CREATE TABLE IF NOT EXISTS monitoring_snapshots (
   avg_view_duration REAL
 );
 
+CREATE TABLE IF NOT EXISTS baseline_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  video_id INTEGER REFERENCES videos(id),
+  youtube_id TEXT,
+  captured_at TEXT,
+  views INTEGER,
+  watch_time_minutes REAL,
+  avg_view_duration REAL,
+  avg_view_percentage REAL,
+  search_views INTEGER,
+  search_watch_time REAL,
+  views_us INTEGER,
+  views_gb INTEGER,
+  views_ca INTEGER,
+  views_au INTEGER,
+  views_nz INTEGER,
+  watch_time_us REAL,
+  watch_time_gb REAL,
+  watch_time_ca REAL,
+  watch_time_au REAL,
+  watch_time_nz REAL
+);
+
 CREATE TABLE IF NOT EXISTS ai_verdicts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   video_id INTEGER REFERENCES videos(id),

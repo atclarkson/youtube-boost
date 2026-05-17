@@ -2,9 +2,9 @@ const cron = require('node-cron');
 
 const db = require('./db');
 const {
-  getVideoAnalytics,
-  getVideoGeoAnalytics,
-  getVideoSearchAnalytics
+  getVideoLifetimeAnalytics,
+  getVideoLifetimeGeoAnalytics,
+  getVideoLifetimeSearchAnalytics
 } = require('./analytics');
 
 const selectVideoById = db.prepare('SELECT * FROM videos WHERE id = ?');
@@ -75,32 +75,104 @@ const selectSnapshotById = db.prepare(`
   FROM monitoring_snapshots
   WHERE id = ?
 `);
+const insertBaselineSnapshot = db.prepare(`
+  INSERT INTO baseline_snapshots (
+    video_id,
+    youtube_id,
+    captured_at,
+    views,
+    watch_time_minutes,
+    avg_view_duration,
+    avg_view_percentage,
+    search_views,
+    search_watch_time,
+    views_us,
+    views_gb,
+    views_ca,
+    views_au,
+    views_nz,
+    watch_time_us,
+    watch_time_gb,
+    watch_time_ca,
+    watch_time_au,
+    watch_time_nz
+  ) VALUES (
+    @video_id,
+    @youtube_id,
+    @captured_at,
+    @views,
+    @watch_time_minutes,
+    @avg_view_duration,
+    @avg_view_percentage,
+    @search_views,
+    @search_watch_time,
+    @views_us,
+    @views_gb,
+    @views_ca,
+    @views_au,
+    @views_nz,
+    @watch_time_us,
+    @watch_time_gb,
+    @watch_time_ca,
+    @watch_time_au,
+    @watch_time_nz
+  )
+`);
+const selectBaselineById = db.prepare(`
+  SELECT *
+  FROM baseline_snapshots
+  WHERE id = ?
+`);
+const selectLatestBaselineForVideo = db.prepare(`
+  SELECT *
+  FROM baseline_snapshots
+  WHERE video_id = ?
+  ORDER BY captured_at DESC, id DESC
+  LIMIT 1
+`);
+const selectLatestSnapshotForVideo = db.prepare(`
+  SELECT *
+  FROM monitoring_snapshots
+  WHERE video_id = ?
+  ORDER BY snapshot_date DESC, id DESC
+  LIMIT 1
+`);
+
+const DELTA_FIELDS = [
+  'views',
+  'watch_time_minutes',
+  'avg_view_duration',
+  'avg_view_percentage',
+  'search_views',
+  'search_watch_time',
+  'views_us',
+  'views_gb',
+  'views_ca',
+  'views_au',
+  'views_nz',
+  'watch_time_us',
+  'watch_time_gb',
+  'watch_time_ca',
+  'watch_time_au',
+  'watch_time_nz'
+];
 
 function formatDate(date) {
   return date.toISOString().slice(0, 10);
 }
 
-function getRelativeDate(daysOffset) {
-  const date = new Date();
-  date.setDate(date.getDate() + daysOffset);
-  return date;
-}
-
-async function buildSnapshotPayload(video, startDate, endDate) {
-  const analytics = await getVideoAnalytics(
+async function buildLifetimePayload(video) {
+  const analytics = await getVideoLifetimeAnalytics(
     video.youtube_id,
-    startDate,
-    endDate
+    video.published_at
   );
-  const geo = await getVideoGeoAnalytics(
+  const geo = await getVideoLifetimeGeoAnalytics(
     video.youtube_id,
-    startDate,
-    endDate
+    video.published_at
   );
-  const search = await getVideoSearchAnalytics(
+  const search = await getVideoLifetimeSearchAnalytics(
     video.youtube_id,
-    startDate,
-    endDate
+    video.published_at
   );
 
   return {
@@ -121,10 +193,8 @@ async function takeSnapshot(videoId, optimizationId) {
     optimizationId != null
       ? { id: optimizationId }
       : selectLatestOptimizationForVideo.get(videoId);
-  const queryStartDate = formatDate(getRelativeDate(-3));
-  const queryEndDate = formatDate(getRelativeDate(-2));
   const snapshotDate = formatDate(new Date());
-  const payload = await buildSnapshotPayload(video, queryStartDate, queryEndDate);
+  const payload = await buildLifetimePayload(video);
 
   const result = insertSnapshot.run({
     video_id: videoId,
@@ -143,26 +213,37 @@ async function takeBaselineSnapshot(videoId) {
     throw new Error('Video not found.');
   }
 
-  const optimization = selectLatestOptimizationForVideo.get(videoId);
-  const endDate = getRelativeDate(-2);
-  const startDate = new Date(endDate);
-  startDate.setDate(startDate.getDate() - 29);
-  const formattedStartDate = formatDate(startDate);
-  const formattedEndDate = formatDate(endDate);
-  const payload = await buildSnapshotPayload(
-    video,
-    formattedStartDate,
-    formattedEndDate
-  );
-
-  const result = insertSnapshot.run({
+  const payload = await buildLifetimePayload(video);
+  const result = insertBaselineSnapshot.run({
     video_id: videoId,
-    optimization_id: optimization?.id || null,
-    snapshot_date: formatDate(new Date()),
+    youtube_id: video.youtube_id,
+    captured_at: new Date().toISOString(),
     ...payload
   });
 
-  return selectSnapshotById.get(result.lastInsertRowid);
+  return selectBaselineById.get(result.lastInsertRowid);
+}
+
+function getSnapshotDelta(videoId) {
+  const baseline = selectLatestBaselineForVideo.get(videoId);
+  const snapshot = selectLatestSnapshotForVideo.get(videoId);
+
+  if (!baseline || !snapshot) {
+    return null;
+  }
+
+  const delta = {
+    baseline_snapshot: baseline,
+    latest_snapshot: snapshot
+  };
+
+  for (const field of DELTA_FIELDS) {
+    const baselineValue = Number(baseline[field] || 0);
+    const snapshotValue = Number(snapshot[field] || 0);
+    delta[field] = snapshotValue - baselineValue;
+  }
+
+  return delta;
 }
 
 async function runDailyMonitoring() {
@@ -202,6 +283,7 @@ cron.schedule('0 8 * * *', async () => {
 });
 
 module.exports = {
+  getSnapshotDelta,
   runDailyMonitoring,
   takeBaselineSnapshot,
   takeSnapshot
