@@ -41,9 +41,28 @@ function formatPublishedDate(value) {
   }
 
   return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
+    month: 'long',
+    day: 'numeric',
     year: 'numeric'
   }).format(new Date(value));
+}
+
+function formatDuration(seconds) {
+  const totalSeconds = Number(seconds || 0);
+
+  if (!totalSeconds) {
+    return '0:00';
+  }
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+  }
+
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
 }
 
 function formatAge(value) {
@@ -379,13 +398,13 @@ function Audit() {
         </button>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-        <table className="min-w-full divide-y divide-gray-200">
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <table className="min-w-full table-fixed divide-y divide-gray-200">
           <thead>
             <tr className="bg-gray-100">
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Thumbnail</th>
+              <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 sm:px-3">Thumbnail</th>
               {Object.entries(sortableColumns).map(([column, label]) => (
-                <th key={column} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <th key={column} className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 sm:px-3">
                   {column === 'actions' ? (
                     <span>{label}</span>
                   ) : (
@@ -419,56 +438,63 @@ function Audit() {
                       setExpandedVideoId(isExpanded ? null : video.id)
                     }
                   >
-                    <td className="px-4 py-4 align-top">
-                      <img
-                        src={`https://img.youtube.com/vi/${video.youtube_id}/default.jpg`}
-                        alt={video.title_current || 'Video thumbnail'}
-                        width="120"
-                        height="90"
-                        className="rounded-md object-cover"
-                      />
+                    <td className="px-2 py-2 align-top sm:px-3">
+                      <div className="relative w-[120px] overflow-hidden rounded-md">
+                        <img
+                          src={`https://img.youtube.com/vi/${video.youtube_id}/default.jpg`}
+                          alt={video.title_current || 'Video thumbnail'}
+                          width="120"
+                          height="90"
+                          className="rounded-md object-cover"
+                        />
+                        <span className="absolute bottom-1 right-1 rounded bg-black/80 px-1.5 py-0.5 text-[11px] font-medium leading-none text-white">
+                          {formatDuration(video.duration_seconds)}
+                        </span>
+                      </div>
                     </td>
-                    <td className="px-4 py-4 align-top text-sm font-medium text-gray-900">
-                      {video.title_current}
+                    <td className="w-full max-w-0 px-2 py-2 align-top text-sm font-medium text-gray-900 sm:px-3">
+                      <div className="truncate">{video.title_current}</div>
                     </td>
-                    <td className="px-4 py-4 align-top text-sm text-gray-600">{formatPublishedDate(video.published_at)}</td>
-                    <td className="px-4 py-4 align-top text-sm text-gray-600">{formatAge(video.published_at)}</td>
-                    <td className="px-4 py-4 align-top text-sm text-gray-600">{formatViews(video.view_count)}</td>
-                    <td className="px-4 py-4 align-top">
+                    <td className="whitespace-nowrap px-2 py-2 align-top text-sm text-gray-600 sm:px-3">{formatPublishedDate(video.published_at)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 align-top text-sm text-gray-600 sm:px-3">{formatAge(video.published_at)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 align-top text-sm text-gray-600 sm:px-3">{formatViews(video.view_count)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 align-top sm:px-3">
                       {performance.label === '—' ? (
                         <span className="text-sm text-gray-400">—</span>
                       ) : (
-                        <span className={`inline-flex rounded-full px-3 py-1 text-sm font-medium ${performance.className}`}>
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${performance.className}`}>
                           {performance.label}
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-4 align-top">
+                    <td className="whitespace-nowrap px-2 py-2 align-top sm:px-3">
                       {unscored ? (
-                        <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600">
+                        <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
                           N/A
                         </span>
                       ) : (
-                        <span className={`inline-flex rounded-full px-3 py-1 text-sm font-semibold ${getScoreClass(score)}`}>
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getScoreClass(score)}`}>
                           {video.audit_score}
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-4 align-top text-sm text-gray-700">
-                      {problemLabels[video.primary_problem] || 'Not Scored'}
+                    <td className="px-2 py-2 align-top text-sm text-gray-700 sm:px-3">
+                      <div className="max-w-[10rem] truncate">
+                        {problemLabels[video.primary_problem] || 'Not Scored'}
+                      </div>
                     </td>
-                    <td className="px-4 py-4 align-top">
-                      <span className={`inline-flex rounded-full px-3 py-1 text-sm font-medium ${getEvergreenClass(video.evergreen_potential)}`}>
+                    <td className="whitespace-nowrap px-2 py-2 align-top sm:px-3">
+                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${getEvergreenClass(video.evergreen_potential)}`}>
                         {evergreenLabels[video.evergreen_potential] || 'Low'}
                       </span>
                     </td>
-                    <td className="px-4 py-4 align-top text-sm text-gray-600">{statusLabels[video.audit_status] || 'Pending'}</td>
-                    <td className="px-4 py-4 align-top">
+                    <td className="whitespace-nowrap px-2 py-2 align-top text-sm text-gray-600 sm:px-3">{statusLabels[video.audit_status] || 'Pending'}</td>
+                    <td className="whitespace-nowrap px-2 py-2 align-top sm:px-3">
                       <button
                         type="button"
                         onClick={(event) => handleScoreVideo(event, video.youtube_id)}
                         disabled={scoringVideoId === video.youtube_id}
-                        className="inline-flex min-w-[88px] items-center justify-center gap-2 rounded bg-slate-800 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-slate-900 disabled:cursor-wait disabled:bg-slate-500"
+                        className="inline-flex min-w-[80px] items-center justify-center gap-2 rounded bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white transition hover:bg-slate-900 disabled:cursor-wait disabled:bg-slate-500"
                       >
                         {scoringVideoId === video.youtube_id ? renderSpinner() : null}
                         <span>{video.audit_score ? 'Rescore' : 'Score'}</span>
@@ -477,7 +503,7 @@ function Audit() {
                   </tr>
                   {isExpanded ? (
                     <tr key={`${video.id}-expanded`} className="bg-gray-50">
-                      <td colSpan="11" className="px-4 py-4">
+                      <td colSpan="11" className="px-3 py-3">
                         <div className="space-y-4 rounded-lg bg-gray-50 p-4">
                           <div>
                             <strong className="text-sm text-gray-900">Score Breakdown</strong>

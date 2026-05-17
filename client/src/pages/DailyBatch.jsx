@@ -16,8 +16,37 @@ function getStatusClass(status) {
   }
 }
 
+function getVideoOptimizationState(videoId, optimizations) {
+  const matchingOptimizations = optimizations.filter(
+    (optimization) => optimization.video_id === videoId
+  );
+
+  if (
+    matchingOptimizations.some(
+      (optimization) =>
+        optimization.status === 'pending' || optimization.status === 'approved'
+    )
+  ) {
+    return {
+      blocked: true,
+      message: 'This video already has a pending optimization.'
+    };
+  }
+
+  if (matchingOptimizations.some((optimization) => optimization.status === 'applied')) {
+    return {
+      blocked: true,
+      message:
+        'This video already has an active optimization. Revert it first before generating new options.'
+    };
+  }
+
+  return { blocked: false, message: '' };
+}
+
 function DailyBatch() {
   const [optimizations, setOptimizations] = useState([]);
+  const [allOptimizations, setAllOptimizations] = useState([]);
   const [approvalsCount, setApprovalsCount] = useState(0);
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,14 +65,16 @@ function DailyBatch() {
       setLoading(true);
       setMessage('');
 
-      const [batchResponse, videosResponse] = await Promise.all([
+      const [batchResponse, videosResponse, allOptimizationsResponse] = await Promise.all([
         axios.get('/api/optimizations/batch/today'),
-        axios.get('/api/videos')
+        axios.get('/api/videos'),
+        axios.get('/api/optimizations')
       ]);
 
       setOptimizations(batchResponse.data.optimizations || []);
       setApprovalsCount(batchResponse.data.approvalsCount || 0);
       setVideos(videosResponse.data || []);
+      setAllOptimizations(allOptimizationsResponse.data || []);
     } catch (error) {
       setMessage(error.response?.data?.error || 'Failed to load daily batch.');
     } finally {
@@ -67,6 +98,14 @@ function DailyBatch() {
     );
   }, [searchQuery, videos]);
 
+  const selectedVideoOptimizationState = useMemo(() => {
+    if (!selectedVideoId) {
+      return { blocked: false, message: '' };
+    }
+
+    return getVideoOptimizationState(Number(selectedVideoId), allOptimizations);
+  }, [allOptimizations, selectedVideoId]);
+
   function getDraftForOptimization(optimizationId) {
     return drafts[optimizationId] || { chosen_title: '', chosen_description: '' };
   }
@@ -77,7 +116,8 @@ function DailyBatch() {
       ...current,
       [optimizationId]: {
         chosen_title: option.title,
-        chosen_description: option.suggested_description_hook
+        chosen_description:
+          optimizations.find((item) => item.id === optimizationId)?.video.description_current || ''
       }
     }));
   }
@@ -106,12 +146,17 @@ function DailyBatch() {
       return;
     }
 
+    if (selectedVideoOptimizationState.blocked) {
+      return;
+    }
+
     try {
       setGenerateLoading(true);
       setMessage('');
 
       const response = await axios.post(`/api/optimizations/generate/${selectedVideoId}`);
       setOptimizations((current) => [response.data, ...current]);
+      setAllOptimizations((current) => [response.data, ...current]);
       setSearchQuery('');
       setSelectedVideoId('');
     } catch (error) {
@@ -136,6 +181,11 @@ function DailyBatch() {
 
       const response = await axios.patch(`/api/optimizations/${optimizationId}/approve`, draft);
       replaceOptimization(response.data);
+      setAllOptimizations((current) =>
+        current.map((optimization) =>
+          optimization.id === response.data.id ? response.data : optimization
+        )
+      );
       setApprovalsCount((count) => count + 1);
       setResultPanels((current) => ({
         ...current,
@@ -160,6 +210,11 @@ function DailyBatch() {
 
       const response = await axios.patch(`/api/optimizations/${optimizationId}/skip`);
       replaceOptimization(response.data);
+      setAllOptimizations((current) =>
+        current.map((optimization) =>
+          optimization.id === response.data.id ? response.data : optimization
+        )
+      );
     } catch (error) {
       setMessage(error.response?.data?.error || 'Failed to skip optimization.');
     } finally {
@@ -188,6 +243,17 @@ function DailyBatch() {
         }));
       } else {
         setOptimizations((current) =>
+          current.map((optimization) =>
+            optimization.id === optimizationId
+              ? {
+                  ...optimization,
+                  status: 'applied',
+                  applied_at: new Date().toISOString()
+                }
+              : optimization
+          )
+        );
+        setAllOptimizations((current) =>
           current.map((optimization) =>
             optimization.id === optimizationId
               ? {
@@ -269,12 +335,17 @@ function DailyBatch() {
             </div>
             <button
               onClick={handleGenerate}
-              disabled={generateLoading}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-wait disabled:bg-blue-400"
+              disabled={generateLoading || selectedVideoOptimizationState.blocked}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
             >
               {generateLoading ? 'Claude is analyzing your video...' : 'Generate Options'}
             </button>
           </div>
+          {selectedVideoOptimizationState.message ? (
+            <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">
+              {selectedVideoOptimizationState.message}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -340,19 +411,15 @@ function DailyBatch() {
                         isSelected
                           ? 'border-blue-500 bg-blue-50'
                           : 'border-gray-200 bg-gray-50/70'
-                      }`}
+                      } flex h-full flex-col`}
                     >
                       <h3 className="text-lg font-semibold text-gray-900">{option.title}</h3>
-                      <span className="mt-3 inline-flex rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
-                        {option.search_intent || 'General audience'}
-                      </span>
-                      <p className="mt-4 text-sm leading-6 text-gray-600">{option.reasoning}</p>
-                      <div className="mt-4 rounded-xl bg-gray-100 px-4 py-3 text-sm text-gray-700">
-                        {option.suggested_description_hook}
-                      </div>
+                      <p className="mt-4 flex-1 text-sm leading-6 text-gray-600">
+                        {option.reasoning}
+                      </p>
                       <button
                         onClick={() => handleChooseOption(optimization.id, index, option)}
-                        className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+                        className="mt-6 w-full rounded-lg bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white transition hover:bg-blue-700"
                       >
                         Choose This
                       </button>
@@ -371,19 +438,6 @@ function DailyBatch() {
                         onChange={(event) =>
                           updateDraft(optimization.id, 'chosen_title', event.target.value)
                         }
-                        className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        Description opening hook
-                      </label>
-                      <textarea
-                        value={draft.chosen_description || optimization.chosen_description || ''}
-                        onChange={(event) =>
-                          updateDraft(optimization.id, 'chosen_description', event.target.value)
-                        }
-                        rows={4}
                         className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500"
                       />
                     </div>

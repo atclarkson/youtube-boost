@@ -34,24 +34,36 @@ function buildGeoData(snapshot) {
   ];
 }
 
+function formatToastClass(type) {
+  if (type === 'success') {
+    return 'bg-emerald-50 text-emerald-700';
+  }
+
+  return 'bg-red-50 text-red-700';
+}
+
 function Monitoring() {
   const [monitoredVideos, setMonitoredVideos] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState(null);
   const [expandedVideoId, setExpandedVideoId] = useState(null);
   const [detailsByVideoId, setDetailsByVideoId] = useState({});
   const [loadingDetailId, setLoadingDetailId] = useState(null);
   const [snapshottingVideoId, setSnapshottingVideoId] = useState(null);
+  const [revertingVideoId, setRevertingVideoId] = useState(null);
 
   async function loadSummary() {
     try {
       setLoading(true);
-      setMessage('');
+      setMessage(null);
 
       const response = await axios.get('/api/monitoring/summary');
       setMonitoredVideos(response.data);
     } catch (error) {
-      setMessage(error.response?.data?.error || 'Failed to load monitoring.');
+      setMessage({
+        type: 'error',
+        text: error.response?.data?.error || 'Failed to load monitoring.'
+      });
     } finally {
       setLoading(false);
     }
@@ -71,7 +83,10 @@ function Monitoring() {
         [videoId]: response.data
       }));
     } catch (error) {
-      setMessage(error.response?.data?.error || 'Failed to load monitoring detail.');
+      setMessage({
+        type: 'error',
+        text: error.response?.data?.error || 'Failed to load monitoring detail.'
+      });
     } finally {
       setLoadingDetailId(null);
     }
@@ -91,14 +106,58 @@ function Monitoring() {
 
     try {
       setSnapshottingVideoId(videoId);
-      setMessage('');
+      setMessage(null);
 
       await axios.post(`/api/monitoring/${videoId}/snapshot`);
       await Promise.all([loadSummary(), loadDetail(videoId)]);
     } catch (error) {
-      setMessage(error.response?.data?.error || 'Failed to take snapshot.');
+      setMessage({
+        type: 'error',
+        text: error.response?.data?.error || 'Failed to take snapshot.'
+      });
     } finally {
       setSnapshottingVideoId(null);
+    }
+  }
+
+  async function handleRevertAndRetry(event, video) {
+    event.stopPropagation();
+
+    const confirmed = window.confirm(
+      'This will revert the title back to the original on YouTube and remove this optimization from monitoring. You can then generate new options. Continue?'
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setRevertingVideoId(video.id);
+      setMessage(null);
+
+      await axios.post(`/api/optimizations/${video.optimization_id}/revert`);
+      setMonitoredVideos((current) =>
+        current.filter((item) => item.id !== video.id)
+      );
+      setDetailsByVideoId((current) => {
+        const next = { ...current };
+        delete next[video.id];
+        return next;
+      });
+      if (expandedVideoId === video.id) {
+        setExpandedVideoId(null);
+      }
+      setMessage({
+        type: 'success',
+        text: 'Optimization reverted and removed from monitoring.'
+      });
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text: error.response?.data?.error || 'Failed to revert optimization.'
+      });
+    } finally {
+      setRevertingVideoId(null);
     }
   }
 
@@ -127,7 +186,9 @@ function Monitoring() {
       </div>
 
       {message ? (
-        <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{message}</p>
+        <p className={`rounded-lg px-4 py-3 text-sm ${formatToastClass(message.type)}`}>
+          {message.text}
+        </p>
       ) : null}
 
       <div className="space-y-4">
@@ -191,14 +252,24 @@ function Monitoring() {
                               }).format(new Date(video.applied_at))
                             : '—'}
                         </div>
-                        <button
-                          type="button"
-                          onClick={(event) => handleSnapshot(event, video.id)}
-                          disabled={snapshottingVideoId === video.id}
-                          className="rounded bg-blue-600 px-4 py-2 text-sm text-white transition hover:bg-blue-700 disabled:cursor-wait disabled:bg-blue-400"
-                        >
-                          {snapshottingVideoId === video.id ? 'Taking Snapshot...' : 'Take Snapshot Now'}
-                        </button>
+                        <div className="flex flex-wrap gap-3">
+                          <button
+                            type="button"
+                            onClick={(event) => handleSnapshot(event, video.id)}
+                            disabled={snapshottingVideoId === video.id}
+                            className="rounded bg-blue-600 px-4 py-2 text-sm text-white transition hover:bg-blue-700 disabled:cursor-wait disabled:bg-blue-400"
+                          >
+                            {snapshottingVideoId === video.id ? 'Taking Snapshot...' : 'Take Snapshot Now'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => handleRevertAndRetry(event, video)}
+                            disabled={revertingVideoId === video.id}
+                            className="rounded bg-orange-600 px-4 py-2 text-sm text-white transition hover:bg-orange-700 disabled:cursor-wait disabled:bg-orange-400"
+                          >
+                            {revertingVideoId === video.id ? 'Reverting...' : 'Revert & Retry'}
+                          </button>
+                        </div>
                       </div>
 
                       <div className="grid gap-6 xl:grid-cols-2">
