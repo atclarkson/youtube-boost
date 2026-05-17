@@ -1,0 +1,42 @@
+body {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  background: linear-gradient(180deg, #f3ede2 0%, #e3dccf 100%);
+  color: #1f1a17;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.nav {
+  display: flex;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  background: rgba(255, 252, 245, 0.9);
+  border-bottom: 1px solid rgba(31, 26, 23, 0.12);
+}
+
+.nav a {
+  padding: 0.5rem 0.75rem;
+  border-radius: 999px;
+}
+
+.nav a.active {
+  background: #1f1a17;
+  color: #fffaf0;
+}
+
+.page {
+  padding: 3rem 1.5rem;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 4rem);
+}

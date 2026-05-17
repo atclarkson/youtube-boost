@@ -1,0 +1,15 @@
+{
+  "name": "youtube-boost-server",
+  "private": true,
+  "main": "index.js",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.54.0",
+    "axios": "^1.9.0",
+    "better-sqlite3": "^11.10.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^4.21.2",
+    "googleapis": "^148.0.0",
+    "node-cron": "^4.0.7"
+  }
+}
