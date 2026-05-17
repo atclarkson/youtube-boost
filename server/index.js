@@ -1,6 +1,8 @@
+const dotenv = require('dotenv');
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
+
+dotenv.config();
 
 const authRoutes = require('./routes/auth');
 const videosRoutes = require('./routes/videos');
@@ -8,8 +10,6 @@ const optimizationsRoutes = require('./routes/optimizations');
 const monitoringRoutes = require('./routes/monitoring');
 const verdictsRoutes = require('./routes/verdicts');
 require('./db');
-
-dotenv.config();
 
 const app = express();
 const port = 3005;
