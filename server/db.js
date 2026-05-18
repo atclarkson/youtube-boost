@@ -66,7 +66,17 @@ CREATE TABLE IF NOT EXISTS monitoring_snapshots (
   views_ca INTEGER,
   views_au INTEGER,
   views_nz INTEGER,
-  avg_view_duration REAL
+  avg_view_duration REAL,
+  avg_view_percentage REAL,
+  watch_time_us REAL,
+  watch_time_gb REAL,
+  watch_time_ca REAL,
+  watch_time_au REAL,
+  watch_time_nz REAL,
+  estimated_revenue REAL,
+  cpm REAL,
+  monetized_playbacks INTEGER,
+  subscribers_gained INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS baseline_snapshots (
@@ -161,6 +171,30 @@ try {
 
 try {
   db.exec('ALTER TABLE monitoring_snapshots ADD COLUMN watch_time_nz REAL');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
+try {
+  db.exec('ALTER TABLE monitoring_snapshots ADD COLUMN estimated_revenue REAL');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
+try {
+  db.exec('ALTER TABLE monitoring_snapshots ADD COLUMN cpm REAL');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
+try {
+  db.exec('ALTER TABLE monitoring_snapshots ADD COLUMN monetized_playbacks INTEGER');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
+try {
+  db.exec('ALTER TABLE monitoring_snapshots ADD COLUMN subscribers_gained INTEGER');
 } catch (error) {
   // Ignore duplicate-column errors so existing databases keep booting cleanly.
 }

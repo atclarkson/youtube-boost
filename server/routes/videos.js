@@ -1,7 +1,9 @@
 const express = require('express');
 
 const db = require('../db');
+const { getVideoAnalytics, getVideoRetentionData } = require('../analytics');
 const { scoreVideo } = require('../scoring');
+const { getPacificDateString } = require('../time');
 const { getAllVideos } = require('../youtube');
 
 const router = express.Router();
@@ -24,6 +26,42 @@ const selectVideoByYoutubeId = db.prepare(`
   SELECT *
   FROM videos
   WHERE youtube_id = ?
+`);
+const selectOptimizationsForVideo = db.prepare(`
+  SELECT *
+  FROM optimizations
+  WHERE video_id = ?
+  ORDER BY created_at DESC, id DESC
+`);
+const selectLatestMonitoringSnapshotForVideo = db.prepare(`
+  SELECT *
+  FROM monitoring_snapshots
+  WHERE video_id = ?
+  ORDER BY snapshot_date DESC, id DESC
+  LIMIT 1
+`);
+const selectLatestBaselineSnapshotForVideo = db.prepare(`
+  SELECT *
+  FROM baseline_snapshots
+  WHERE video_id = ?
+  ORDER BY captured_at DESC, id DESC
+  LIMIT 1
+`);
+const selectLatestAiVerdictForVideo = db.prepare(`
+  SELECT *
+  FROM ai_verdicts
+  WHERE video_id = ?
+  ORDER BY verdict_date DESC, id DESC
+  LIMIT 1
+`);
+const selectRankedPublicLongFormVideos = db.prepare(`
+  SELECT youtube_id, title_current, audit_score
+  FROM videos
+  WHERE privacy_status = 'public'
+    AND COALESCE(hidden, 0) = 0
+    AND duration_seconds >= 180
+    AND audit_score IS NOT NULL
+  ORDER BY audit_score DESC, published_at ASC, id ASC
 `);
 const updateVideoHiddenStatus = db.prepare(`
   UPDATE videos
@@ -121,6 +159,53 @@ function applyDevScoreLimit(videos) {
   }
 
   return videos;
+}
+
+function parseOptionMetadata(value) {
+  try {
+    const parsed = JSON.parse(value || '{}');
+    return {
+      reasoning: String(parsed.reasoning || ''),
+      search_intent: String(parsed.search_intent || ''),
+      suggested_description_hook: String(parsed.suggested_description_hook || '')
+    };
+  } catch (error) {
+    return {
+      reasoning: String(value || ''),
+      search_intent: '',
+      suggested_description_hook: ''
+    };
+  }
+}
+
+function serializeOptimization(row) {
+  const option1Meta = parseOptionMetadata(row.title_option_1_reasoning);
+  const option2Meta = parseOptionMetadata(row.title_option_2_reasoning);
+  const option3Meta = parseOptionMetadata(row.title_option_3_reasoning);
+
+  return {
+    ...row,
+    options: [
+      {
+        title: row.title_option_1,
+        reasoning: option1Meta.reasoning,
+        search_intent: option1Meta.search_intent,
+        suggested_description_hook: option1Meta.suggested_description_hook
+      },
+      {
+        title: row.title_option_2,
+        reasoning: option2Meta.reasoning,
+        search_intent: option2Meta.search_intent,
+        suggested_description_hook: option2Meta.suggested_description_hook
+      },
+      {
+        title: row.title_option_3,
+        reasoning: option3Meta.reasoning,
+        search_intent: option3Meta.search_intent,
+        suggested_description_hook: option3Meta.suggested_description_hook
+      }
+    ].filter((option) => option.title)
+  };
 }
 
 function sleep(ms) {
@@ -399,6 +484,80 @@ router.get('/', (req, res) => {
   } catch (error) {
     console.error('Failed to fetch videos:', error);
     res.status(500).json({ error: 'Failed to fetch videos.' });
+  }
+});
+
+router.get('/:youtubeId/detail', (req, res) => {
+  (async () => {
+    try {
+    const video = selectVideoByYoutubeId.get(req.params.youtubeId);
+
+    if (!video) {
+      return res.status(404).json({ error: 'Video not found.' });
+    }
+
+    const optimizations = selectOptimizationsForVideo
+      .all(video.id)
+      .map(serializeOptimization);
+    const monitoringSnapshot = selectLatestMonitoringSnapshotForVideo.get(video.id) || null;
+    const baselineSnapshot = selectLatestBaselineSnapshotForVideo.get(video.id) || null;
+    const aiVerdict = selectLatestAiVerdictForVideo.get(video.id) || null;
+    const rankedVideos = selectRankedPublicLongFormVideos.all();
+    const currentIndex = rankedVideos.findIndex(
+      (rankedVideo) => rankedVideo.youtube_id === video.youtube_id
+    );
+    let lifetimeAnalytics = null;
+
+    try {
+      lifetimeAnalytics = await getVideoAnalytics(
+        video.youtube_id,
+        getPacificDateString(video.published_at),
+        getPacificDateString(new Date())
+      );
+    } catch (error) {
+      console.error('Failed to fetch lifetime analytics for detail view:', error.message);
+      lifetimeAnalytics = null;
+    }
+
+    const prevVideo =
+      currentIndex >= 0 && currentIndex < rankedVideos.length - 1
+        ? rankedVideos[currentIndex + 1]
+        : null;
+    const nextVideo =
+      currentIndex > 0
+        ? rankedVideos[currentIndex - 1]
+        : null;
+
+    res.json({
+      video,
+      optimizations,
+      monitoring_snapshot: monitoringSnapshot,
+      baseline_snapshot: baselineSnapshot,
+      ai_verdict: aiVerdict,
+      lifetime_analytics: lifetimeAnalytics,
+      prev_video: prevVideo,
+      next_video: nextVideo
+    });
+    } catch (error) {
+      console.error('Failed to fetch video detail:', error);
+      res.status(500).json({ error: 'Failed to fetch video detail.' });
+    }
+  })();
+});
+
+router.get('/:youtubeId/retention', async (req, res) => {
+  try {
+    const video = selectVideoByYoutubeId.get(req.params.youtubeId);
+
+    if (!video) {
+      return res.status(404).json({ error: 'Video not found.' });
+    }
+
+    const retentionData = await getVideoRetentionData(req.params.youtubeId);
+    res.json(retentionData);
+  } catch (error) {
+    console.error('Failed to fetch retention data:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch retention data.' });
   }
 });
 

@@ -5,7 +5,8 @@ const { getPacificDateString } = require('./time');
 const {
   getVideoLifetimeAnalytics,
   getVideoLifetimeGeoAnalytics,
-  getVideoLifetimeSearchAnalytics
+  getVideoLifetimeSearchAnalytics,
+  getVideoRevenueAnalytics
 } = require('./analytics');
 
 const selectVideoById = db.prepare('SELECT * FROM videos WHERE id = ?');
@@ -48,7 +49,11 @@ const insertSnapshot = db.prepare(`
     watch_time_gb,
     watch_time_ca,
     watch_time_au,
-    watch_time_nz
+    watch_time_nz,
+    estimated_revenue,
+    cpm,
+    monetized_playbacks,
+    subscribers_gained
   ) VALUES (
     @video_id,
     @optimization_id,
@@ -68,7 +73,11 @@ const insertSnapshot = db.prepare(`
     @watch_time_gb,
     @watch_time_ca,
     @watch_time_au,
-    @watch_time_nz
+    @watch_time_nz,
+    @estimated_revenue,
+    @cpm,
+    @monetized_playbacks,
+    @subscribers_gained
   )
 `);
 const selectSnapshotById = db.prepare(`
@@ -175,11 +184,16 @@ async function buildLifetimePayload(video) {
     video.youtube_id,
     video.published_at
   );
+  const revenue = await getVideoRevenueAnalytics(
+    video.youtube_id,
+    video.published_at
+  );
 
   return {
     ...analytics,
     ...geo,
-    ...search
+    ...search,
+    ...revenue
   };
 }
 

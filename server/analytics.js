@@ -121,11 +121,52 @@ async function getVideoLifetimeSearchAnalytics(youtubeId, publishedAt) {
   );
 }
 
+async function getVideoRevenueAnalytics(youtubeId, publishedAt) {
+  const rows = await runQuery({
+    ids: 'channel==MINE',
+    dimensions: 'video',
+    filters: `video==${youtubeId}`,
+    metrics: 'estimatedRevenue,cpm,monetizedPlaybacks,subscribersGained',
+    startDate: formatDate(publishedAt),
+    endDate: getTodayDate()
+  });
+
+  const row = rows[0] || [];
+
+  return {
+    estimated_revenue: Number(row[1] || 0),
+    cpm: Number(row[2] || 0),
+    monetized_playbacks: Number(row[3] || 0),
+    subscribers_gained: Number(row[4] || 0)
+  };
+}
+
+async function getVideoRetentionData(youtubeId) {
+  const rows = await runQuery({
+    ids: 'channel==MINE',
+    dimensions: 'elapsedVideoTimeRatio',
+    filters: `video==${youtubeId};audienceType==ORGANIC`,
+    metrics: 'audienceWatchRatio,relativeRetentionPerformance',
+    startDate: '2010-01-01',
+    endDate: getTodayDate()
+  });
+
+  return rows
+    .map((row) => ({
+      ratio: Number(row[0] || 0),
+      audienceWatchRatio: Number(row[1] || 0),
+      relativeRetentionPerformance: Number(row[2] || 0)
+    }))
+    .sort((left, right) => left.ratio - right.ratio);
+}
+
 module.exports = {
   getVideoAnalytics,
   getVideoGeoAnalytics,
   getVideoSearchAnalytics,
   getVideoLifetimeAnalytics,
   getVideoLifetimeGeoAnalytics,
-  getVideoLifetimeSearchAnalytics
+  getVideoLifetimeSearchAnalytics,
+  getVideoRevenueAnalytics,
+  getVideoRetentionData
 };
