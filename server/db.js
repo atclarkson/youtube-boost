@@ -140,6 +140,36 @@ try {
 }
 
 try {
+  db.exec('ALTER TABLE videos ADD COLUMN scoring_version INTEGER DEFAULT 1');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
+try {
+  db.exec('ALTER TABLE videos ADD COLUMN keyword_score REAL');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
+try {
+  db.exec('ALTER TABLE videos ADD COLUMN clarity_score REAL');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
+try {
+  db.exec('ALTER TABLE videos ADD COLUMN evergreen_score REAL');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
+try {
+  db.exec('ALTER TABLE videos ADD COLUMN score_explanation TEXT');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
+try {
   db.exec('ALTER TABLE monitoring_snapshots ADD COLUMN avg_view_percentage REAL');
 } catch (error) {
   // Ignore duplicate-column errors so existing databases keep booting cleanly.

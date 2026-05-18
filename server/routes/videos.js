@@ -2,7 +2,12 @@ const express = require('express');
 
 const db = require('../db');
 const { getVideoAnalytics, getVideoRetentionData } = require('../analytics');
-const { scoreVideo } = require('../scoring');
+const {
+  calculateCompositeScore,
+  explainVideoScore,
+  scoreVideo,
+  scoreVideoV2
+} = require('../scoring');
 const { getPacificDateString } = require('../time');
 const { getAllVideos } = require('../youtube');
 
@@ -12,6 +17,7 @@ let scoringProgress = {
   current: 0,
   total: 0,
   currentTitle: '',
+  version: 1,
   failedCount: 0,
   failedVideos: []
 };
@@ -79,6 +85,23 @@ const selectUnscoredVideosForScoring = db.prepare(`
   WHERE audit_score IS NULL OR audit_score = 0
   ORDER BY published_at ASC
 `);
+const selectEligibleVideosForV2Scoring = db.prepare(`
+  SELECT *
+  FROM videos
+  WHERE privacy_status = 'public'
+    AND COALESCE(hidden, 0) = 0
+    AND duration_seconds >= 180
+  ORDER BY published_at ASC
+`);
+const selectVideosForV2Rescore = db.prepare(`
+  SELECT *
+  FROM videos
+  WHERE privacy_status = 'public'
+    AND COALESCE(hidden, 0) = 0
+    AND duration_seconds >= 180
+    AND (scoring_version IS NULL OR scoring_version = 1)
+  ORDER BY published_at ASC
+`);
 const selectVideoCount = db.prepare(`
   SELECT COUNT(*) AS count
   FROM videos
@@ -97,6 +120,22 @@ const updateVideoScore = db.prepare(`
     evergreen_potential = @evergreen_potential,
     primary_problem = @primary_problem
   WHERE id = @id
+`);
+const updateVideoScoreV2 = db.prepare(`
+  UPDATE videos
+  SET
+    keyword_score = @keyword_score,
+    clarity_score = @clarity_score,
+    evergreen_score = @evergreen_score,
+    primary_problem = @primary_problem,
+    audit_score = @audit_score,
+    scoring_version = 2
+  WHERE id = @id
+`);
+const updateVideoScoreExplanation = db.prepare(`
+  UPDATE videos
+  SET score_explanation = ?
+  WHERE id = ?
 `);
 
 const upsertVideo = db.prepare(`
@@ -212,6 +251,40 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function getViewsPerDay(video) {
+  const publishedDate = video?.published_at ? new Date(video.published_at) : null;
+
+  if (!publishedDate || Number.isNaN(publishedDate.getTime())) {
+    return 0;
+  }
+
+  const ageInDays = Math.max(
+    1,
+    (Date.now() - publishedDate.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  return Number(video.view_count || 0) / ageInDays;
+}
+
+function getMedianViewsPerDay(videos) {
+  const values = videos
+    .map(getViewsPerDay)
+    .filter((value) => Number.isFinite(value))
+    .sort((left, right) => left - right);
+
+  if (values.length === 0) {
+    return 0;
+  }
+
+  const middle = Math.floor(values.length / 2);
+
+  if (values.length % 2 === 0) {
+    return (values[middle - 1] + values[middle]) / 2;
+  }
+
+  return values[middle];
+}
+
 function isScoringFailure(result) {
   return result.audit_score === 0 && result.audit_score_reason === 'Scoring failed';
 }
@@ -243,6 +316,7 @@ async function runBackgroundScoring(videos) {
     current: 0,
     total: videos.length,
     currentTitle: '',
+    version: 1,
     failedCount: 0,
     failedVideos: []
   };
@@ -280,6 +354,84 @@ async function runBackgroundScoring(videos) {
     scoringProgress.current = 0;
     scoringProgress.total = 0;
     scoringProgress.currentTitle = '';
+    scoringProgress.version = null;
+  }
+}
+
+async function scoreVideoV2WithRetry(video) {
+  let result = await scoreVideoV2(video);
+
+  if (!result.failed) {
+    return { result, failed: false, errorMessage: '' };
+  }
+
+  await sleep(2000);
+  result = await scoreVideoV2(video);
+
+  if (!result.failed) {
+    return { result, failed: false, errorMessage: '' };
+  }
+
+  return {
+    result,
+    failed: true,
+    errorMessage: 'V2 scoring failed'
+  };
+}
+
+async function runBackgroundScoringV2(videos, channelMedianViewsPerDay) {
+  scoringProgress = {
+    inProgress: true,
+    current: 0,
+    total: videos.length,
+    currentTitle: '',
+    version: 2,
+    failedCount: 0,
+    failedVideos: []
+  };
+
+  try {
+    for (let index = 0; index < videos.length; index += 1) {
+      const video = videos[index];
+      scoringProgress.current = index + 1;
+      scoringProgress.currentTitle = video.title_current || '';
+
+      const { result, failed, errorMessage } = await scoreVideoV2WithRetry(video);
+      const videoWithScores = {
+        ...video,
+        ...result
+      };
+      const compositeScore = calculateCompositeScore(
+        videoWithScores,
+        channelMedianViewsPerDay
+      );
+
+      updateVideoScoreV2.run({
+        id: video.id,
+        keyword_score: result.keyword_score,
+        clarity_score: result.clarity_score,
+        evergreen_score: result.evergreen_score,
+        primary_problem: result.primary_problem,
+        audit_score: compositeScore
+      });
+
+      if (failed) {
+        scoringProgress.failedCount += 1;
+        scoringProgress.failedVideos.push({
+          youtube_id: video.youtube_id,
+          title_current: video.title_current,
+          error: errorMessage
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Background v2 scoring failed:', error);
+  } finally {
+    scoringProgress.inProgress = false;
+    scoringProgress.current = 0;
+    scoringProgress.total = 0;
+    scoringProgress.currentTitle = '';
+    scoringProgress.version = null;
   }
 }
 
@@ -408,6 +560,40 @@ router.post('/score-unscored', async (req, res) => {
   }
 });
 
+router.post('/score-all-v2', async (req, res) => {
+  try {
+    const eligibleVideos = selectEligibleVideosForV2Scoring.all();
+    const channelMedianViewsPerDay = getMedianViewsPerDay(eligibleVideos);
+    const videos = applyDevScoreLimit(eligibleVideos);
+
+    res.json({ started: true, total: videos.length });
+
+    (async () => {
+      await runBackgroundScoringV2(videos, channelMedianViewsPerDay);
+    })();
+  } catch (error) {
+    console.error('Failed to start v2 scoring all videos:', error);
+    res.status(500).json({ error: error.message || 'Failed to score videos.' });
+  }
+});
+
+router.post('/score-unscored-v2', async (req, res) => {
+  try {
+    const eligibleVideos = selectEligibleVideosForV2Scoring.all();
+    const channelMedianViewsPerDay = getMedianViewsPerDay(eligibleVideos);
+    const videos = applyDevScoreLimit(selectVideosForV2Rescore.all());
+
+    res.json({ started: true, total: videos.length });
+
+    (async () => {
+      await runBackgroundScoringV2(videos, channelMedianViewsPerDay);
+    })();
+  } catch (error) {
+    console.error('Failed to start v2 scoring unscored videos:', error);
+    res.status(500).json({ error: error.message || 'Failed to score videos.' });
+  }
+});
+
 router.post('/:youtubeId/score', async (req, res) => {
   try {
     const video = selectVideoByYoutubeId.get(req.params.youtubeId);
@@ -433,6 +619,66 @@ router.post('/:youtubeId/score', async (req, res) => {
   } catch (error) {
     console.error('Failed to score video:', error);
     res.status(500).json({ error: error.message || 'Failed to score video.' });
+  }
+});
+
+router.post('/:youtubeId/score-v2', async (req, res) => {
+  try {
+    const video = selectVideoByYoutubeId.get(req.params.youtubeId);
+
+    if (!video) {
+      return res.status(404).json({ error: 'Video not found.' });
+    }
+
+    const eligibleVideos = selectEligibleVideosForV2Scoring.all();
+    const channelMedianViewsPerDay = getMedianViewsPerDay(eligibleVideos);
+    const result = await scoreVideoV2(video);
+    const compositeScore = calculateCompositeScore(
+      { ...video, ...result },
+      channelMedianViewsPerDay
+    );
+
+    updateVideoScoreV2.run({
+      id: video.id,
+      keyword_score: result.keyword_score,
+      clarity_score: result.clarity_score,
+      evergreen_score: result.evergreen_score,
+      primary_problem: result.primary_problem,
+      audit_score: compositeScore
+    });
+
+    const updatedVideo = selectVideoByYoutubeId.get(req.params.youtubeId);
+
+    res.json(updatedVideo);
+  } catch (error) {
+    console.error('Failed to score video with v2:', error);
+    res.status(500).json({ error: error.message || 'Failed to score video.' });
+  }
+});
+
+router.post('/:youtubeId/explain', async (req, res) => {
+  try {
+    const video = selectVideoByYoutubeId.get(req.params.youtubeId);
+
+    if (!video) {
+      return res.status(404).json({ error: 'Video not found.' });
+    }
+
+    if (Number(video.scoring_version) !== 2) {
+      return res.status(400).json({ error: 'Score this video with v2 first' });
+    }
+
+    const explanation = await explainVideoScore(video);
+
+    if (!explanation) {
+      return res.status(500).json({ error: 'Failed to explain video score.' });
+    }
+
+    updateVideoScoreExplanation.run(JSON.stringify(explanation), video.id);
+    res.json(explanation);
+  } catch (error) {
+    console.error('Failed to explain video score:', error);
+    res.status(500).json({ error: error.message || 'Failed to explain video score.' });
   }
 });
 
@@ -490,54 +736,54 @@ router.get('/', (req, res) => {
 router.get('/:youtubeId/detail', (req, res) => {
   (async () => {
     try {
-    const video = selectVideoByYoutubeId.get(req.params.youtubeId);
+      const video = selectVideoByYoutubeId.get(req.params.youtubeId);
 
-    if (!video) {
-      return res.status(404).json({ error: 'Video not found.' });
-    }
+      if (!video) {
+        return res.status(404).json({ error: 'Video not found.' });
+      }
 
-    const optimizations = selectOptimizationsForVideo
-      .all(video.id)
-      .map(serializeOptimization);
-    const monitoringSnapshot = selectLatestMonitoringSnapshotForVideo.get(video.id) || null;
-    const baselineSnapshot = selectLatestBaselineSnapshotForVideo.get(video.id) || null;
-    const aiVerdict = selectLatestAiVerdictForVideo.get(video.id) || null;
-    const rankedVideos = selectRankedPublicLongFormVideos.all();
-    const currentIndex = rankedVideos.findIndex(
-      (rankedVideo) => rankedVideo.youtube_id === video.youtube_id
-    );
-    let lifetimeAnalytics = null;
-
-    try {
-      lifetimeAnalytics = await getVideoAnalytics(
-        video.youtube_id,
-        getPacificDateString(video.published_at),
-        getPacificDateString(new Date())
+      const optimizations = selectOptimizationsForVideo
+        .all(video.id)
+        .map(serializeOptimization);
+      const monitoringSnapshot = selectLatestMonitoringSnapshotForVideo.get(video.id) || null;
+      const baselineSnapshot = selectLatestBaselineSnapshotForVideo.get(video.id) || null;
+      const aiVerdict = selectLatestAiVerdictForVideo.get(video.id) || null;
+      const rankedVideos = selectRankedPublicLongFormVideos.all();
+      const currentIndex = rankedVideos.findIndex(
+        (rankedVideo) => rankedVideo.youtube_id === video.youtube_id
       );
-    } catch (error) {
-      console.error('Failed to fetch lifetime analytics for detail view:', error.message);
-      lifetimeAnalytics = null;
-    }
+      let lifetimeAnalytics = null;
 
-    const prevVideo =
-      currentIndex >= 0 && currentIndex < rankedVideos.length - 1
-        ? rankedVideos[currentIndex + 1]
-        : null;
-    const nextVideo =
-      currentIndex > 0
-        ? rankedVideos[currentIndex - 1]
-        : null;
+      try {
+        lifetimeAnalytics = await getVideoAnalytics(
+          video.youtube_id,
+          getPacificDateString(video.published_at),
+          getPacificDateString(new Date())
+        );
+      } catch (error) {
+        console.error('Failed to fetch lifetime analytics for detail view:', error.message);
+        lifetimeAnalytics = null;
+      }
 
-    res.json({
-      video,
-      optimizations,
-      monitoring_snapshot: monitoringSnapshot,
-      baseline_snapshot: baselineSnapshot,
-      ai_verdict: aiVerdict,
-      lifetime_analytics: lifetimeAnalytics,
-      prev_video: prevVideo,
-      next_video: nextVideo
-    });
+      const prevVideo =
+        currentIndex >= 0 && currentIndex < rankedVideos.length - 1
+          ? rankedVideos[currentIndex + 1]
+          : null;
+      const nextVideo =
+        currentIndex > 0
+          ? rankedVideos[currentIndex - 1]
+          : null;
+
+      res.json({
+        video,
+        optimizations,
+        monitoring_snapshot: monitoringSnapshot,
+        baseline_snapshot: baselineSnapshot,
+        ai_verdict: aiVerdict,
+        lifetime_analytics: lifetimeAnalytics,
+        prev_video: prevVideo,
+        next_video: nextVideo
+      });
     } catch (error) {
       console.error('Failed to fetch video detail:', error);
       res.status(500).json({ error: 'Failed to fetch video detail.' });

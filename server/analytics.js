@@ -122,23 +122,34 @@ async function getVideoLifetimeSearchAnalytics(youtubeId, publishedAt) {
 }
 
 async function getVideoRevenueAnalytics(youtubeId, publishedAt) {
-  const rows = await runQuery({
-    ids: 'channel==MINE',
-    dimensions: 'video',
-    filters: `video==${youtubeId}`,
-    metrics: 'estimatedRevenue,cpm,monetizedPlaybacks,subscribersGained',
-    startDate: formatDate(publishedAt),
-    endDate: getTodayDate()
-  });
+  try {
+    const rows = await runQuery({
+      ids: 'channel==MINE',
+      dimensions: 'video',
+      filters: `video==${youtubeId}`,
+      metrics: 'estimatedRevenue,cpm,monetizedPlaybacks,subscribersGained',
+      startDate: formatDate(publishedAt),
+      endDate: getTodayDate()
+    });
 
-  const row = rows[0] || [];
+    const row = rows[0] || [];
 
-  return {
-    estimated_revenue: Number(row[1] || 0),
-    cpm: Number(row[2] || 0),
-    monetized_playbacks: Number(row[3] || 0),
-    subscribers_gained: Number(row[4] || 0)
-  };
+    return {
+      estimated_revenue: Number(row[1] || 0),
+      cpm: Number(row[2] || 0),
+      monetized_playbacks: Number(row[3] || 0),
+      subscribers_gained: Number(row[4] || 0)
+    };
+  } catch (error) {
+    console.error(`Failed to fetch revenue analytics for ${youtubeId}:`, error);
+
+    return {
+      estimated_revenue: 0,
+      cpm: 0,
+      monetized_playbacks: 0,
+      subscribers_gained: 0
+    };
+  }
 }
 
 async function getVideoRetentionData(youtubeId) {
