@@ -1,4 +1,5 @@
 const db = require('./db');
+const { getPacificDateString } = require('./time');
 
 const selectLogByDate = db.prepare(`
   SELECT *
@@ -17,9 +18,7 @@ const updateLog = db.prepare(`
 `);
 
 function getTodayString() {
-  const now = new Date();
-  const offsetMs = now.getTimezoneOffset() * 60 * 1000;
-  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
+  return getPacificDateString(new Date());
 }
 
 function parseVideoIds(value) {

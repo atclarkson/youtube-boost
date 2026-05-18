@@ -64,7 +64,7 @@ async function fetchVideoDetails(youtube, videoIds) {
   for (let index = 0; index < videoIds.length; index += 50) {
     const batchIds = videoIds.slice(index, index + 50);
     const response = await youtube.videos.list({
-      part: ['snippet', 'contentDetails', 'statistics'],
+      part: ['snippet', 'contentDetails', 'statistics', 'status'],
       id: batchIds
     });
 
@@ -76,6 +76,7 @@ async function fetchVideoDetails(youtube, videoIds) {
         publishedAt: item.snippet?.publishedAt || null,
         duration: parseDurationToSeconds(item.contentDetails?.duration || ''),
         categoryId: item.snippet?.categoryId || null,
+        privacyStatus: item.status?.privacyStatus || 'public',
         tags: item.snippet?.tags || [],
         viewCount: Number(item.statistics?.viewCount || 0),
         statistics: {

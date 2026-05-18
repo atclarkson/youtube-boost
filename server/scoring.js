@@ -193,7 +193,7 @@ async function scoreVideo(video) {
   try {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-5',
-      max_tokens: 500,
+      max_tokens: 1500,
       messages: [
         {
           role: 'user',

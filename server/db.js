@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS videos (
   published_at TEXT,
   duration_seconds INTEGER,
   category_id TEXT,
+  privacy_status TEXT,
   tags TEXT,                        -- JSON array as string
   audit_score REAL,
   audit_score_breakdown TEXT,       -- JSON object as string
@@ -116,6 +117,12 @@ try {
 }
 
 try {
+  db.exec('ALTER TABLE videos ADD COLUMN privacy_status TEXT');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
+try {
   db.exec('ALTER TABLE monitoring_snapshots ADD COLUMN avg_view_percentage REAL');
 } catch (error) {
   // Ignore duplicate-column errors so existing databases keep booting cleanly.
@@ -150,5 +157,16 @@ try {
 } catch (error) {
   // Ignore duplicate-column errors so existing databases keep booting cleanly.
 }
+
+db.exec(`
+  UPDATE monitoring_snapshots
+  SET snapshot_date = date(snapshot_date, '-1 day')
+  WHERE id IN (
+    SELECT ms.id
+    FROM monitoring_snapshots ms
+    INNER JOIN optimizations o ON o.id = ms.optimization_id
+    WHERE ms.snapshot_date = date(substr(o.applied_at, 1, 10), '+1 day')
+  )
+`);
 
 module.exports = db;

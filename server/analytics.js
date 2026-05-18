@@ -1,6 +1,7 @@
 const { google } = require('googleapis');
 
 const { getClient } = require('./auth');
+const { getPacificDateString } = require('./time');
 
 const TRACKED_COUNTRIES = ['US', 'GB', 'CA', 'AU', 'NZ'];
 
@@ -18,7 +19,7 @@ async function runQuery(params) {
 }
 
 function formatDate(value) {
-  return new Date(value).toISOString().slice(0, 10);
+  return getPacificDateString(value);
 }
 
 function getTodayDate() {

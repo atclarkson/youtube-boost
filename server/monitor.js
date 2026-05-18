@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 
 const db = require('./db');
+const { getPacificDateString } = require('./time');
 const {
   getVideoLifetimeAnalytics,
   getVideoLifetimeGeoAnalytics,
@@ -158,7 +159,7 @@ const DELTA_FIELDS = [
 ];
 
 function formatDate(date) {
-  return date.toISOString().slice(0, 10);
+  return getPacificDateString(date);
 }
 
 async function buildLifetimePayload(video) {

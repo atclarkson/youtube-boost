@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { PACIFIC_TIME_ZONE, parseAppDate } from '../lib/time.js';
 
 function getStatusClass(status) {
   switch (status) {
@@ -22,10 +23,11 @@ function formatAppliedDate(value) {
   }
 
   return new Intl.DateTimeFormat('en-US', {
+    timeZone: PACIFIC_TIME_ZONE,
     month: 'short',
     day: 'numeric',
     year: 'numeric'
-  }).format(new Date(value));
+  }).format(parseAppDate(value));
 }
 
 function History() {

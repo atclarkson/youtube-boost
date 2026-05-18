@@ -2,6 +2,7 @@ const express = require('express');
 
 const db = require('../db');
 const { getSnapshotDelta, takeSnapshot } = require('../monitor');
+const { toDate } = require('../time');
 
 const router = express.Router();
 
@@ -59,7 +60,7 @@ const selectMonitoringSummaryRows = db.prepare(`
 `);
 
 function getDaysBetween(startDate, endDate) {
-  const diff = new Date(endDate).getTime() - new Date(startDate).getTime();
+  const diff = toDate(endDate).getTime() - toDate(startDate).getTime();
   return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { PACIFIC_TIME_ZONE, getPacificDateKey, parseAppDate } from '../lib/time.js';
 import {
   Bar,
   BarChart,
@@ -19,9 +20,10 @@ function formatShortDate(value) {
   }
 
   return new Intl.DateTimeFormat('en-US', {
+    timeZone: PACIFIC_TIME_ZONE,
     month: 'short',
     day: 'numeric'
-  }).format(new Date(value));
+  }).format(parseAppDate(value));
 }
 
 function buildGeoData(snapshot) {
@@ -40,6 +42,10 @@ function formatToastClass(type) {
   }
 
   return 'bg-red-50 text-red-700';
+}
+
+function formatOneDecimal(value) {
+  return Number(value || 0).toFixed(1);
 }
 
 function Monitoring() {
@@ -246,10 +252,11 @@ function Monitoring() {
                           Applied on{' '}
                           {video.applied_at
                             ? new Intl.DateTimeFormat('en-US', {
+                                timeZone: PACIFIC_TIME_ZONE,
                                 month: 'short',
                                 day: 'numeric',
                                 year: 'numeric'
-                              }).format(new Date(video.applied_at))
+                              }).format(parseAppDate(video.applied_at))
                             : '—'}
                         </div>
                         <div className="flex flex-wrap gap-3">
@@ -284,7 +291,7 @@ function Monitoring() {
                                 <Tooltip />
                                 {video.applied_at ? (
                                   <ReferenceLine
-                                    x={video.applied_at.slice(0, 10)}
+                                    x={getPacificDateKey(video.applied_at)}
                                     stroke="#2563eb"
                                     strokeDasharray="4 4"
                                     label="Applied"
@@ -313,7 +320,7 @@ function Monitoring() {
                                 <Tooltip />
                                 {video.applied_at ? (
                                   <ReferenceLine
-                                    x={video.applied_at.slice(0, 10)}
+                                    x={getPacificDateKey(video.applied_at)}
                                     stroke="#0f766e"
                                     strokeDasharray="4 4"
                                     label="Applied"
@@ -370,7 +377,7 @@ function Monitoring() {
                               </div>
                               <div className="flex justify-between gap-4">
                                 <dt>Avg View %</dt>
-                                <dd>{latestSnapshot?.avg_view_percentage || 0}</dd>
+                                <dd>{formatOneDecimal(latestSnapshot?.avg_view_percentage)}%</dd>
                               </div>
                             </dl>
                           </div>

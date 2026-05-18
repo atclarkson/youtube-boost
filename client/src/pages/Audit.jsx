@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import axios from 'axios';
+import { PACIFIC_TIME_ZONE, parseAppDate } from '../lib/time.js';
 
 const problemLabels = {
   low_ctr: 'Low CTR',
@@ -41,10 +42,11 @@ function formatPublishedDate(value) {
   }
 
   return new Intl.DateTimeFormat('en-US', {
+    timeZone: PACIFIC_TIME_ZONE,
     month: 'long',
     day: 'numeric',
     year: 'numeric'
-  }).format(new Date(value));
+  }).format(parseAppDate(value));
 }
 
 function formatDuration(seconds) {
@@ -247,23 +249,60 @@ function compareVideos(a, b, column, direction, medianViewsPerDay) {
   return direction === 'asc' ? comparison : -comparison;
 }
 
+function getBatchState(video, optimizations) {
+  const matchingOptimization = optimizations.find(
+    (optimization) => optimization.video?.youtube_id === video.youtube_id
+  );
+
+  if (!matchingOptimization) {
+    return {
+      disabled: false,
+      message: ''
+    };
+  }
+
+  if (
+    matchingOptimization.status === 'pending' ||
+    matchingOptimization.status === 'approved' ||
+    matchingOptimization.status === 'applied'
+  ) {
+    return {
+      disabled: true,
+      message: 'Already in batch or applied.'
+    };
+  }
+
+  return {
+    disabled: false,
+    message: ''
+  };
+}
+
 function Audit() {
   const [videos, setVideos] = useState([]);
+  const [optimizations, setOptimizations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [expandedVideoId, setExpandedVideoId] = useState(null);
   const [scoringVideoId, setScoringVideoId] = useState(null);
+  const [generatingBatchVideoId, setGeneratingBatchVideoId] = useState(null);
+  const [batchMessagesByVideoId, setBatchMessagesByVideoId] = useState({});
   const [sortColumn, setSortColumn] = useState('score');
   const [sortDirection, setSortDirection] = useState('desc');
-  const [contentFilter, setContentFilter] = useState('all');
+  const [contentFilter, setContentFilter] = useState('long_form');
+  const [publicOnly, setPublicOnly] = useState(true);
 
   async function loadAudit() {
     try {
       setLoading(true);
       setMessage('');
 
-      const response = await axios.get('/api/videos/audit');
-      setVideos(response.data);
+      const [videosResponse, optimizationsResponse] = await Promise.all([
+        axios.get('/api/videos/audit'),
+        axios.get('/api/optimizations')
+      ]);
+      setVideos(videosResponse.data);
+      setOptimizations(optimizationsResponse.data || []);
     } catch (error) {
       setMessage(error.response?.data?.error || 'Failed to load audit.');
     } finally {
@@ -321,8 +360,58 @@ function Audit() {
     }
   }
 
+  async function handleAddToBatch(event, video) {
+    event.stopPropagation();
+
+    const existingState = getBatchState(video, optimizations);
+
+    if (existingState.disabled) {
+      setBatchMessagesByVideoId((current) => ({
+        ...current,
+        [video.id]: {
+          type: 'info',
+          text: existingState.message
+        }
+      }));
+      return;
+    }
+
+    try {
+      setGeneratingBatchVideoId(video.id);
+      setBatchMessagesByVideoId((current) => ({
+        ...current,
+        [video.id]: null
+      }));
+
+      await axios.post(`/api/optimizations/generate/${video.youtube_id}`);
+      const optimizationsResponse = await axios.get('/api/optimizations');
+      setOptimizations(optimizationsResponse.data || []);
+      setBatchMessagesByVideoId((current) => ({
+        ...current,
+        [video.id]: {
+          type: 'success',
+          text: 'Options generated! View in Daily Batch.'
+        }
+      }));
+    } catch (error) {
+      setBatchMessagesByVideoId((current) => ({
+        ...current,
+        [video.id]: {
+          type: 'error',
+          text: error.response?.data?.error || 'Failed to generate options.'
+        }
+      }));
+    } finally {
+      setGeneratingBatchVideoId(null);
+    }
+  }
+
   const visibleVideos = videos
     .filter((video) => {
+      if (publicOnly && video.privacy_status !== 'public') {
+        return false;
+      }
+
       if (contentFilter === 'shorts') {
         return Number(video.duration_seconds || 0) < 180;
       }
@@ -398,6 +487,16 @@ function Audit() {
         </button>
       </div>
 
+      <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+        <input
+          type="checkbox"
+          checked={publicOnly}
+          onChange={(event) => setPublicOnly(event.target.checked)}
+          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+        />
+        <span>Public only</span>
+      </label>
+
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <table className="min-w-full table-fixed divide-y divide-gray-200">
           <thead>
@@ -429,6 +528,8 @@ function Audit() {
               const unscored = isUnscored(video);
               const performance = getPerformanceData(video, medianViewsPerDay);
               const rowClass = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+              const batchState = getBatchState(video, optimizations);
+              const batchMessage = batchMessagesByVideoId[video.id];
 
               return (
                 <Fragment key={video.id}>
@@ -488,7 +589,17 @@ function Audit() {
                         {evergreenLabels[video.evergreen_potential] || 'Low'}
                       </span>
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2 align-top text-sm text-gray-600 sm:px-3">{statusLabels[video.audit_status] || 'Pending'}</td>
+                    <td className="whitespace-nowrap px-2 py-2 align-top text-sm text-gray-600 sm:px-3">
+                      <div className="inline-flex items-center gap-2">
+                        <span>{statusLabels[video.audit_status] || 'Pending'}</span>
+                        {video.audit_status === 'applied' ? (
+                          <span
+                            className="h-2 w-2 animate-pulse rounded-full bg-green-500"
+                            title="Currently being monitored"
+                          />
+                        ) : null}
+                      </div>
+                    </td>
                     <td className="whitespace-nowrap px-2 py-2 align-top sm:px-3">
                       <button
                         type="button"
@@ -565,13 +676,15 @@ function Audit() {
                           <div className="flex flex-wrap gap-3">
                             <button
                               type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                window.alert('Batch flow is not implemented yet.');
-                              }}
-                              className="rounded bg-blue-600 px-4 py-2 text-white transition hover:bg-blue-700"
+                              onClick={(event) => handleAddToBatch(event, video)}
+                              disabled={
+                                generatingBatchVideoId === video.id || batchState.disabled
+                              }
+                              className="rounded bg-blue-600 px-4 py-2 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
                             >
-                              Add to Batch
+                              {generatingBatchVideoId === video.id
+                                ? 'Generating...'
+                                : 'Add to Batch'}
                             </button>
                             <button
                               type="button"
@@ -583,9 +696,31 @@ function Audit() {
                               <span>{video.audit_score ? 'Rescore' : 'Score'}</span>
                             </button>
                           </div>
-                          <p className="text-sm italic text-gray-500">
-                            Performance scoring will improve in Phase 4 when watch time and CTR data is available from YouTube Analytics.
-                          </p>
+                          {batchMessage ? (
+                            <p
+                              className={`text-sm ${
+                                batchMessage.type === 'error'
+                                  ? 'text-red-700'
+                                  : batchMessage.type === 'success'
+                                    ? 'text-emerald-700'
+                                    : 'text-gray-600'
+                              }`}
+                            >
+                              {batchMessage.type === 'success' ? (
+                                <>
+                                  {batchMessage.text}{' '}
+                                  <a href="/batch" className="font-medium underline">
+                                    Open Daily Batch
+                                  </a>
+                                </>
+                              ) : (
+                                batchMessage.text
+                              )}
+                            </p>
+                          ) : null}
+                          {!batchMessage && batchState.disabled ? (
+                            <p className="text-sm text-gray-600">{batchState.message}</p>
+                          ) : null}
                         </div>
                       </td>
                     </tr>

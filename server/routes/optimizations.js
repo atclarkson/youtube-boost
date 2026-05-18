@@ -4,6 +4,7 @@ const db = require('../db');
 const { incrementApprovals, getTodayApprovalCount } = require('../dailyLog');
 const { takeBaselineSnapshot } = require('../monitor');
 const { generateOptions } = require('../optimizer');
+const { getPacificDateString } = require('../time');
 const { updateVideo } = require('../youtube');
 
 const router = express.Router();
@@ -28,14 +29,21 @@ const selectAllOptimizations = db.prepare(`
   ${optimizationSelectSql}
   ORDER BY optimizations.created_at DESC, optimizations.id DESC
 `);
-const selectTodayOptimizations = db.prepare(`
-  ${optimizationSelectSql}
-  WHERE date(optimizations.created_at, 'localtime') = date('now', 'localtime')
-  ORDER BY optimizations.created_at DESC, optimizations.id DESC
-`);
 const selectOptimizationById = db.prepare(`
   ${optimizationSelectSql}
   WHERE optimizations.id = ?
+  LIMIT 1
+`);
+const selectVideoIdByDbId = db.prepare(`
+  SELECT id
+  FROM videos
+  WHERE id = ?
+  LIMIT 1
+`);
+const selectVideoIdByYoutubeId = db.prepare(`
+  SELECT id
+  FROM videos
+  WHERE youtube_id = ?
   LIMIT 1
 `);
 const insertOptimization = db.prepare(`
@@ -173,7 +181,11 @@ router.get('/', (req, res) => {
 
 router.get('/batch/today', (req, res) => {
   try {
-    const optimizations = selectTodayOptimizations.all().map(serializeOptimization);
+    const pacificToday = getPacificDateString(new Date());
+    const optimizations = selectAllOptimizations
+      .all()
+      .filter((row) => getPacificDateString(row.created_at) === pacificToday)
+      .map(serializeOptimization);
     const approvalsCount = getTodayApprovalCount();
 
     res.json({ optimizations, approvalsCount });
@@ -185,11 +197,19 @@ router.get('/batch/today', (req, res) => {
 
 router.post('/generate/:videoId', async (req, res) => {
   try {
-    const videoId = Number(req.params.videoId);
-    const options = await generateOptions(videoId);
+    const rawVideoId = req.params.videoId;
+    const resolvedVideo = /^\d+$/.test(rawVideoId)
+      ? selectVideoIdByDbId.get(Number(rawVideoId))
+      : selectVideoIdByYoutubeId.get(rawVideoId);
+
+    if (!resolvedVideo) {
+      return res.status(404).json({ error: 'Video not found.' });
+    }
+
+    const options = await generateOptions(resolvedVideo.id);
 
     const result = insertOptimization.run({
-      video_id: videoId,
+      video_id: resolvedVideo.id,
       title_option_1: options[0].title,
       title_option_1_reasoning: serializeOption(options[0]),
       title_option_2: options[1].title,

@@ -37,6 +37,7 @@ const upsertVideo = db.prepare(`
     published_at,
     duration_seconds,
     category_id,
+    privacy_status,
     tags,
     view_count,
     last_synced_at
@@ -49,6 +50,7 @@ const upsertVideo = db.prepare(`
     @published_at,
     @duration_seconds,
     @category_id,
+    @privacy_status,
     @tags,
     @view_count,
     @last_synced_at
@@ -61,6 +63,7 @@ const upsertVideo = db.prepare(`
     published_at = excluded.published_at,
     duration_seconds = excluded.duration_seconds,
     category_id = excluded.category_id,
+    privacy_status = excluded.privacy_status,
     tags = excluded.tags,
     view_count = excluded.view_count,
     last_synced_at = excluded.last_synced_at
@@ -92,6 +95,7 @@ router.get('/sync', async (req, res) => {
           published_at: video.publishedAt,
           duration_seconds: video.duration,
           category_id: video.categoryId,
+          privacy_status: video.privacyStatus,
           tags: JSON.stringify(video.tags || []),
           view_count: video.viewCount,
           last_synced_at: now
