@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS videos (
   audit_score_reason TEXT,
   evergreen_potential TEXT,
   primary_problem TEXT,
+  hidden INTEGER DEFAULT 0,
   last_synced_at TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
@@ -118,6 +119,12 @@ try {
 
 try {
   db.exec('ALTER TABLE videos ADD COLUMN privacy_status TEXT');
+} catch (error) {
+  // Ignore duplicate-column errors so existing databases keep booting cleanly.
+}
+
+try {
+  db.exec('ALTER TABLE videos ADD COLUMN hidden INTEGER DEFAULT 0');
 } catch (error) {
   // Ignore duplicate-column errors so existing databases keep booting cleanly.
 }

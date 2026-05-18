@@ -7,12 +7,26 @@ const {
   generateAuthUrl,
   isAuthenticated
 } = require('../auth');
+const { getChannelInfo } = require('../youtube');
 
 const router = express.Router();
 const tokenPath = path.join(__dirname, '..', '..', 'data', 'token.json');
 
 router.get('/status', (req, res) => {
   res.json({ authenticated: isAuthenticated() });
+});
+
+router.get('/channel', async (req, res) => {
+  if (!isAuthenticated()) {
+    return res.json({
+      name: null,
+      thumbnail: null,
+      subscriberCount: null
+    });
+  }
+
+  const channelInfo = await getChannelInfo();
+  res.json(channelInfo);
 });
 
 router.get('/login', (req, res) => {

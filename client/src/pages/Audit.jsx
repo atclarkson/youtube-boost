@@ -291,6 +291,8 @@ function Audit() {
   const [sortDirection, setSortDirection] = useState('desc');
   const [contentFilter, setContentFilter] = useState('long_form');
   const [publicOnly, setPublicOnly] = useState(true);
+  const [showHidden, setShowHidden] = useState(false);
+  const [hidingVideoId, setHidingVideoId] = useState(null);
 
   async function loadAudit() {
     try {
@@ -298,7 +300,7 @@ function Audit() {
       setMessage('');
 
       const [videosResponse, optimizationsResponse] = await Promise.all([
-        axios.get('/api/videos/audit'),
+        axios.get(`/api/videos/audit${showHidden ? '?showHidden=1' : ''}`),
         axios.get('/api/optimizations')
       ]);
       setVideos(videosResponse.data);
@@ -312,7 +314,7 @@ function Audit() {
 
   useEffect(() => {
     loadAudit();
-  }, []);
+  }, [showHidden]);
 
   function handleSort(column) {
     if (sortColumn === column) {
@@ -406,8 +408,48 @@ function Audit() {
     }
   }
 
+  async function handleToggleHidden(event, video) {
+    event.stopPropagation();
+
+    try {
+      setHidingVideoId(video.youtube_id);
+      setMessage('');
+
+      await axios.patch(
+        `/api/videos/${video.youtube_id}/${Number(video.hidden || 0) === 1 ? 'unhide' : 'hide'}`
+      );
+
+      if (Number(video.hidden || 0) === 1) {
+        setVideos((currentVideos) =>
+          currentVideos.map((currentVideo) =>
+            currentVideo.youtube_id === video.youtube_id
+              ? { ...currentVideo, hidden: 0 }
+              : currentVideo
+          )
+        );
+        return;
+      }
+
+      setVideos((currentVideos) =>
+        currentVideos.filter((currentVideo) => currentVideo.youtube_id !== video.youtube_id)
+      );
+
+      if (expandedVideoId === video.id) {
+        setExpandedVideoId(null);
+      }
+    } catch (error) {
+      setMessage(error.response?.data?.error || 'Failed to update hidden state.');
+    } finally {
+      setHidingVideoId(null);
+    }
+  }
+
   const visibleVideos = videos
     .filter((video) => {
+      if (!showHidden && Number(video.hidden || 0) === 1) {
+        return false;
+      }
+
       if (publicOnly && video.privacy_status !== 'public') {
         return false;
       }
@@ -497,6 +539,16 @@ function Audit() {
         <span>Public only</span>
       </label>
 
+      <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+        <input
+          type="checkbox"
+          checked={showHidden}
+          onChange={(event) => setShowHidden(event.target.checked)}
+          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+        />
+        <span>Show Hidden</span>
+      </label>
+
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <table className="min-w-full table-fixed divide-y divide-gray-200">
           <thead>
@@ -527,7 +579,11 @@ function Audit() {
               const score = Number(video.audit_score || 0);
               const unscored = isUnscored(video);
               const performance = getPerformanceData(video, medianViewsPerDay);
-              const rowClass = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+              const rowClass = Number(video.hidden || 0) === 1
+                ? 'bg-slate-100 text-slate-500'
+                : index % 2 === 0
+                  ? 'bg-white'
+                  : 'bg-gray-50';
               const batchState = getBatchState(video, optimizations);
               const batchMessage = batchMessagesByVideoId[video.id];
 
@@ -685,6 +741,20 @@ function Audit() {
                               {generatingBatchVideoId === video.id
                                 ? 'Generating...'
                                 : 'Add to Batch'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => handleToggleHidden(event, video)}
+                              disabled={hidingVideoId === video.youtube_id}
+                              className="rounded bg-slate-200 px-4 py-2 text-slate-800 transition hover:bg-slate-300 disabled:cursor-wait disabled:bg-slate-100"
+                            >
+                              {hidingVideoId === video.youtube_id
+                                ? Number(video.hidden || 0) === 1
+                                  ? 'Unhiding...'
+                                  : 'Hiding...'
+                                : Number(video.hidden || 0) === 1
+                                  ? 'Unhide'
+                                  : 'Hide Video'}
                             </button>
                             <button
                               type="button"

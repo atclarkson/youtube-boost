@@ -100,6 +100,30 @@ async function getAllVideos() {
   return fetchVideoDetails(youtube, videoIds);
 }
 
+async function getChannelInfo() {
+  try {
+    const auth = await getClient();
+    const youtube = google.youtube({ version: 'v3', auth });
+    const response = await youtube.channels.list({
+      part: ['snippet', 'statistics'],
+      mine: true
+    });
+    const channel = response.data.items?.[0];
+
+    return {
+      name: channel?.snippet?.title || null,
+      thumbnail: channel?.snippet?.thumbnails?.default?.url || null,
+      subscriberCount: channel?.statistics?.subscriberCount || null
+    };
+  } catch (error) {
+    return {
+      name: null,
+      thumbnail: null,
+      subscriberCount: null
+    };
+  }
+}
+
 async function updateVideo(youtubeId, title, description) {
   const auth = await getClient();
   const youtube = google.youtube({ version: 'v3', auth });
@@ -148,5 +172,6 @@ async function updateVideo(youtubeId, title, description) {
 
 module.exports = {
   getAllVideos,
+  getChannelInfo,
   updateVideo
 };
