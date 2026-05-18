@@ -61,6 +61,10 @@ function getStatusBadgeClass(status) {
   }
 }
 
+function getScoringLabel(version) {
+  return Number(version) === 2 ? 'Scoring v2' : 'Scoring';
+}
+
 function getAgeInDays(publishedAt) {
   return Math.max(
     1,
@@ -152,6 +156,7 @@ function Dashboard() {
     current: 0,
     total: 0,
     currentTitle: '',
+    version: null,
     failedCount: 0,
     failedVideos: []
   });
@@ -159,6 +164,7 @@ function Dashboard() {
   const [showFailedVideos, setShowFailedVideos] = useState(false);
   const [retryingVideoId, setRetryingVideoId] = useState(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [lastScoringVersion, setLastScoringVersion] = useState(null);
 
   const syncPollRef = useRef(null);
   const scoringPollRef = useRef(null);
@@ -266,8 +272,9 @@ function Dashboard() {
     }
   }
 
-  function startScoringPolling(total) {
-    scoringSessionRef.current = { total };
+  function startScoringPolling(total, version = 1) {
+    scoringSessionRef.current = { total, version };
+    setLastScoringVersion(version);
     setScoringSummary(null);
     setShowFailedVideos(false);
     setScoringStatus({
@@ -275,6 +282,7 @@ function Dashboard() {
       current: 0,
       total,
       currentTitle: '',
+      version,
       failedCount: 0,
       failedVideos: []
     });
@@ -338,6 +346,29 @@ function Dashboard() {
       return;
     }
 
+    if (type === 'unscored-v2') {
+      setModalState({
+        open: true,
+        type,
+        title: 'Score Unscored Videos (v2)',
+        message: `This will score ${unscoredCount} unscored videos using the new v2 formula. This may take a long time. Continue?`,
+        total: unscoredCount
+      });
+      return;
+    }
+
+    if (type === 'all-v2') {
+      setModalState({
+        open: true,
+        type,
+        title: 'Score All Videos (v2)',
+        message:
+          'This will rescore all videos using the new v2 formula. Existing v2 scores will be overwritten. This may take a long time. Continue?',
+        total: totalVideos
+      });
+      return;
+    }
+
     setModalState({
       open: true,
       type,
@@ -360,8 +391,14 @@ function Dashboard() {
   }
 
   async function handleConfirmScoreAction() {
-    const isUnscored = modalState.type === 'unscored';
-    const endpoint = isUnscored ? '/api/videos/score-unscored' : '/api/videos/score-all';
+    const endpointMap = {
+      unscored: '/api/videos/score-unscored',
+      all: '/api/videos/score-all',
+      'unscored-v2': '/api/videos/score-unscored-v2',
+      'all-v2': '/api/videos/score-all-v2'
+    };
+    const version = modalState.type.includes('v2') ? 2 : 1;
+    const endpoint = endpointMap[modalState.type];
 
     try {
       setConfirmingAction(true);
@@ -369,7 +406,7 @@ function Dashboard() {
 
       const response = await axios.post(endpoint);
       closeModal();
-      startScoringPolling(response.data.total || modalState.total || 0);
+      startScoringPolling(response.data.total || modalState.total || 0, version);
     } catch (error) {
       setMessage(error.response?.data?.error || 'Failed to start scoring.');
       setConfirmingAction(false);
@@ -657,7 +694,7 @@ function Dashboard() {
                 </div>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid gap-3 md:grid-cols-5">
                 <button
                   onClick={handleSync}
                   disabled={syncing || scoringStatus.inProgress}
@@ -683,6 +720,22 @@ function Dashboard() {
                 >
                   Score All Videos
                 </button>
+
+                <button
+                  onClick={() => openScoreModal('unscored-v2')}
+                  disabled={unscoredCount === 0 || syncing || scoringStatus.inProgress}
+                  className="rounded-lg bg-indigo-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-indigo-800 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                >
+                  {`Score Unscored (v2) (${unscoredCount})`}
+                </button>
+
+                <button
+                  onClick={() => openScoreModal('all-v2')}
+                  disabled={syncing || scoringStatus.inProgress}
+                  className="rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                >
+                  Score All (v2)
+                </button>
               </div>
 
               <div className="space-y-2 text-sm text-gray-600">
@@ -697,7 +750,7 @@ function Dashboard() {
                 <div className="space-y-3 rounded-2xl bg-slate-50 p-5 ring-1 ring-slate-200">
                   <div className="flex items-center justify-between gap-4 text-sm font-medium text-slate-700">
                     <span>
-                      Scoring {scoringStatus.current} of {progressTotal}:{' '}
+                      {getScoringLabel(scoringStatus.version)} {scoringStatus.current} of {progressTotal}:{' '}
                       {scoringStatus.currentTitle || 'Preparing...'}
                     </span>
                     <span>{progressPercent.toFixed(0)}%</span>
@@ -714,7 +767,7 @@ function Dashboard() {
               {scoringSummary ? (
                 <div className="space-y-3 rounded-2xl bg-blue-50 p-5 ring-1 ring-blue-200">
                   <p className="text-sm font-medium text-blue-800">
-                    Scoring complete. {scoringSummary.scored} scored, {scoringSummary.failed} failed.
+                    {getScoringLabel(lastScoringVersion)} complete. {scoringSummary.scored} scored, {scoringSummary.failed} failed.
                   </p>
 
                   {scoringStatus.failedCount > 0 ? (
@@ -736,9 +789,12 @@ function Dashboard() {
                             >
                               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                                 <div className="min-w-0">
-                                  <p className="truncate text-sm font-medium text-gray-900">
+                                  <Link
+                                    to={`/video/${video.youtube_id}`}
+                                    className="block truncate text-sm font-medium text-gray-900 no-underline hover:underline"
+                                  >
                                     {video.title_current}
-                                  </p>
+                                  </Link>
                                   <p className="mt-1 text-sm text-red-700">{video.error}</p>
                                 </div>
                                 <button
@@ -775,9 +831,12 @@ function Dashboard() {
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-3">
-                              <p className="truncate text-sm font-medium text-gray-900">
+                              <Link
+                                to={`/video/${video.youtube_id}`}
+                                className="block truncate text-sm font-medium text-gray-900 no-underline hover:underline"
+                              >
                                 {truncateTitle(video.title_current)}
-                              </p>
+                              </Link>
                               <span
                                 className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${getScoreBadgeClass(
                                   Number(video.audit_score || 0)
@@ -828,9 +887,12 @@ function Dashboard() {
                   <div className="mt-4 space-y-3">
                     {monitoringVideos.map((video) => (
                       <div key={video.id} className="flex items-center justify-between gap-3">
-                        <p className="truncate text-sm font-medium text-gray-900">
+                        <Link
+                          to={`/video/${video.youtube_id}`}
+                          className="block truncate text-sm font-medium text-gray-900 no-underline hover:underline"
+                        >
                           {truncateTitle(video.title_current)}
-                        </p>
+                        </Link>
                         <span className="shrink-0 text-xs text-gray-500">
                           {video.days_remaining} days remaining
                         </span>
@@ -861,9 +923,12 @@ function Dashboard() {
                               className="h-14 w-20 rounded-md object-cover"
                             />
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium text-gray-900">
+                              <Link
+                                to={`/video/${video.youtube_id}`}
+                                className="block truncate text-sm font-medium text-gray-900 no-underline hover:underline"
+                              >
                                 {truncateTitle(video.title_current)}
-                              </p>
+                              </Link>
                               <p className="mt-1 text-xs text-gray-500">
                                 Published {formatDate(video.published_at)}
                               </p>
@@ -890,9 +955,12 @@ function Dashboard() {
                               />
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-start justify-between gap-3">
-                                  <p className="truncate text-sm font-medium text-gray-900">
+                                  <Link
+                                    to={`/video/${video.youtube_id}`}
+                                    className="block truncate text-sm font-medium text-gray-900 no-underline hover:underline"
+                                  >
                                     {truncateTitle(video.title_current)}
-                                  </p>
+                                  </Link>
                                   <span
                                     className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${getScoreBadgeClass(
                                       Number(video.audit_score || 0)
@@ -941,9 +1009,12 @@ function Dashboard() {
                     {recentActivity.map((optimization) => (
                       <div key={optimization.id} className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-gray-900">
+                          <Link
+                            to={`/video/${optimization.video.youtube_id}`}
+                            className="block truncate text-sm font-medium text-gray-900 no-underline hover:underline"
+                          >
                             {truncateTitle(optimization.video.title_current)}
-                          </p>
+                          </Link>
                           <p className="mt-1 text-xs text-gray-500">
                             {formatDate(optimization.created_at)}
                           </p>
@@ -974,9 +1045,12 @@ function Dashboard() {
                           className="h-14 w-20 rounded-md object-cover"
                         />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-gray-900">
+                          <Link
+                            to={`/video/${video.youtube_id}`}
+                            className="block truncate text-sm font-medium text-gray-900 no-underline hover:underline"
+                          >
                             {truncateTitle(video.title_current)}
-                          </p>
+                          </Link>
                           <p className="mt-1 text-xs text-gray-500">
                             {formatNumber(video.view_count)} views
                           </p>
@@ -1004,9 +1078,12 @@ function Dashboard() {
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-3">
-                              <p className="truncate text-sm font-medium text-gray-900">
+                              <Link
+                                to={`/video/${video.youtube_id}`}
+                                className="block truncate text-sm font-medium text-gray-900 no-underline hover:underline"
+                              >
                                 {truncateTitle(video.title_current)}
-                              </p>
+                              </Link>
                               <span
                                 className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${getScoreBadgeClass(
                                   Number(video.audit_score || 0)

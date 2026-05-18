@@ -105,6 +105,11 @@ CREATE TABLE IF NOT EXISTS videos (
   audit_score REAL,
   audit_score_breakdown TEXT,       -- JSON object as string
   audit_score_reason TEXT,
+  scoring_version INTEGER DEFAULT 1,
+  keyword_score REAL,
+  clarity_score REAL,
+  evergreen_score REAL,
+  score_explanation TEXT,
   evergreen_potential TEXT,
   primary_problem TEXT,
   last_synced_at TEXT,

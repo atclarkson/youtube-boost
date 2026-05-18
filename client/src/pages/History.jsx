@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { Link } from 'react-router-dom';
 import { PACIFIC_TIME_ZONE, parseAppDate } from '../lib/time.js';
 
 function getStatusClass(status) {
@@ -137,10 +138,20 @@ function History() {
                     />
                   </td>
                   <td className="px-4 py-4 text-sm text-gray-700">
-                    {optimization.video.title_original || optimization.video.title_current}
+                    <Link
+                      to={`/video/${optimization.video.youtube_id}`}
+                      className="text-gray-700 no-underline hover:underline"
+                    >
+                      {optimization.video.title_original || optimization.video.title_current}
+                    </Link>
                   </td>
                   <td className="px-4 py-4 text-sm font-medium text-gray-900">
-                    {optimization.chosen_title || '—'}
+                    <Link
+                      to={`/video/${optimization.video.youtube_id}`}
+                      className="text-gray-900 no-underline hover:underline"
+                    >
+                      {optimization.chosen_title || '—'}
+                    </Link>
                   </td>
                   <td className="px-4 py-4">
                     <span

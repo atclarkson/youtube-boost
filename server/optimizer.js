@@ -25,11 +25,23 @@ function stripMarkdownFences(rawText) {
 }
 
 function buildPrompt(video) {
+  let parsedExplanation = null;
+
+  try {
+    parsedExplanation = video.score_explanation
+      ? JSON.parse(video.score_explanation)
+      : null;
+  } catch (error) {
+    parsedExplanation = null;
+  }
+
   return `
 You are writing YouTube metadata ideas for a family travel channel.
 
 Channel context:
 Adam and Linds is a family travel YouTube channel. Adam, Lindsay, and their three daughters (Lily, Cora, Harper) travel full-time and worldschool their kids. Core audience is English-speaking: US, UK, Canada, Australia, New Zealand.
+
+If keyword_quality_notes, title_clarity_notes, or ctr_assessment are provided above, use them as direct guidance for what specific problems to fix in the new titles. The score explanation identifies exactly what is wrong — address those specific issues.
 
 Video data:
 - Current title: ${JSON.stringify(video.title_current || '')}
@@ -40,6 +52,13 @@ Video data:
 - Audit score reason: ${JSON.stringify(video.audit_score_reason || '')}
 - Primary problem: ${JSON.stringify(video.primary_problem || '')}
 - Evergreen potential: ${JSON.stringify(video.evergreen_potential || '')}
+- Scoring version: ${JSON.stringify(video.scoring_version ?? null)}
+${Number(video.scoring_version) === 2 ? `- Keyword score: ${JSON.stringify(video.keyword_score ?? null)}
+- Clarity score: ${JSON.stringify(video.clarity_score ?? null)}
+- Evergreen score: ${JSON.stringify(video.evergreen_score ?? null)}` : ''}
+${parsedExplanation ? `- Keyword quality notes: ${JSON.stringify(parsedExplanation.keyword_quality_notes || '')}
+- Title clarity notes: ${JSON.stringify(parsedExplanation.title_clarity_notes || '')}
+- CTR assessment: ${JSON.stringify(parsedExplanation.ctr_assessment || '')}` : ''}
 
 Instructions:
 - Generate exactly 3 title options.

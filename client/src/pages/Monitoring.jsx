@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { Link } from 'react-router-dom';
 import { PACIFIC_TIME_ZONE, getPacificDateKey, parseAppDate } from '../lib/time.js';
 import {
   Bar,
@@ -231,9 +232,13 @@ function Monitoring() {
                   className="h-20 w-28 rounded-md object-cover"
                 />
                 <div className="min-w-0 flex-1">
-                  <h2 className="truncate text-lg font-semibold text-gray-900">
+                  <Link
+                    to={`/video/${video.youtube_id}`}
+                    onClick={(event) => event.stopPropagation()}
+                    className="block truncate text-lg font-semibold text-gray-900 no-underline hover:underline"
+                  >
                     {video.title_current}
-                  </h2>
+                  </Link>
                   <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-600">
                     <span>Days since optimization: {video.days_since_optimization}</span>
                     <span>Days remaining: {video.days_remaining}</span>

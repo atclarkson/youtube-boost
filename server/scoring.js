@@ -177,6 +177,13 @@ function buildExplainPrompt(video) {
   const tags = parseTags(video.tags);
   const contentType = getContentType(video.duration_seconds);
   const era = getEra(video.published_at);
+  const publishedDate = video?.published_at ? new Date(video.published_at) : null;
+  const ageInDays =
+    publishedDate && !Number.isNaN(publishedDate.getTime())
+      ? (Date.now() - publishedDate.getTime()) / 86400000
+      : 0;
+  const viewsPerDay = Number(video.view_count || 0) / Math.max(1, ageInDays);
+  const ageInYears = ageInDays / 365.25;
 
   return `
 Given this YouTube video's metadata and scores, provide a detailed explanation.
@@ -187,10 +194,15 @@ Video:
 - Tags: ${JSON.stringify(tags)}
 - Content type: ${JSON.stringify(contentType)}
 - Era: ${JSON.stringify(era)}
+- Views: ${Number(video.view_count || 0)}
+- Views per day: ${viewsPerDay.toFixed(2)}
+- Age: ${ageInYears.toFixed(1)} years
 - Keyword Score: ${clampHundredScore(video.keyword_score)}/100
 - Clarity Score: ${clampHundredScore(video.clarity_score)}/100
 - Evergreen Score: ${clampHundredScore(video.evergreen_score)}/100
 - Primary Problem: ${JSON.stringify(video.primary_problem || 'poor_discoverability')}
+
+When writing audit_score_reason and relative_performance_note, factor in the video's actual performance data (views per day, age) not just the metadata quality scores.
 
 Return valid JSON only, no markdown:
 {

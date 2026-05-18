@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import axios from 'axios';
+import { Link } from 'react-router-dom';
 import { PACIFIC_TIME_ZONE, parseAppDate } from '../lib/time.js';
 
 const problemLabels = {
@@ -132,6 +133,30 @@ function parseBreakdown(value) {
   } catch (error) {
     return {};
   }
+}
+
+function parseExplanation(value) {
+  try {
+    if (!value) {
+      return null;
+    }
+
+    return typeof value === 'string' ? JSON.parse(value) : value;
+  } catch (error) {
+    return null;
+  }
+}
+
+function getHundredScoreClass(score) {
+  if (Number(score || 0) >= 70) {
+    return 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200';
+  }
+
+  if (Number(score || 0) >= 40) {
+    return 'bg-yellow-100 text-yellow-700 ring-1 ring-yellow-200';
+  }
+
+  return 'bg-red-100 text-red-700 ring-1 ring-red-200';
 }
 
 function getVideoAgeMs(value) {
@@ -293,6 +318,7 @@ function Audit() {
   const [publicOnly, setPublicOnly] = useState(true);
   const [showHidden, setShowHidden] = useState(false);
   const [hidingVideoId, setHidingVideoId] = useState(null);
+  const [explainingVideoId, setExplainingVideoId] = useState(null);
 
   async function loadAudit() {
     try {
@@ -444,6 +470,29 @@ function Audit() {
     }
   }
 
+  async function handleExplainScore(event, video) {
+    event.stopPropagation();
+
+    try {
+      setExplainingVideoId(video.youtube_id);
+      setMessage('');
+
+      const response = await axios.post(`/api/videos/${video.youtube_id}/explain`);
+
+      setVideos((currentVideos) =>
+        currentVideos.map((currentVideo) =>
+          currentVideo.youtube_id === video.youtube_id
+            ? { ...currentVideo, score_explanation: JSON.stringify(response.data) }
+            : currentVideo
+        )
+      );
+    } catch (error) {
+      setMessage(error.response?.data?.error || 'Failed to explain score.');
+    } finally {
+      setExplainingVideoId(null);
+    }
+  }
+
   const visibleVideos = videos
     .filter((video) => {
       if (!showHidden && Number(video.hidden || 0) === 1) {
@@ -553,9 +602,34 @@ function Audit() {
         <table className="min-w-full table-fixed divide-y divide-gray-200">
           <thead>
             <tr className="bg-gray-100">
-              <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 sm:px-3">Thumbnail</th>
+              <th className="w-20 px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 sm:px-3">Thumbnail</th>
               {Object.entries(sortableColumns).map(([column, label]) => (
-                <th key={column} className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 sm:px-3">
+                <th
+                  key={column}
+                  className={`px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 sm:px-3 ${
+                    column === 'title'
+                      ? 'w-auto'
+                      : column === 'published'
+                        ? 'w-32'
+                        : column === 'age'
+                          ? 'w-24'
+                          : column === 'views'
+                            ? 'w-24'
+                            : column === 'performance'
+                              ? 'w-28'
+                              : column === 'score'
+                                ? 'w-20'
+                                : column === 'primary_problem'
+                                  ? 'w-40'
+                                  : column === 'evergreen_potential'
+                                    ? 'w-24'
+                                    : column === 'audit_status'
+                                      ? 'w-28'
+                                      : column === 'actions'
+                                        ? 'w-24'
+                                        : ''
+                  }`}
+                >
                   {column === 'actions' ? (
                     <span>{label}</span>
                   ) : (
@@ -579,6 +653,7 @@ function Audit() {
               const score = Number(video.audit_score || 0);
               const unscored = isUnscored(video);
               const performance = getPerformanceData(video, medianViewsPerDay);
+              const explanation = parseExplanation(video.score_explanation);
               const rowClass = Number(video.hidden || 0) === 1
                 ? 'bg-slate-100 text-slate-500'
                 : index % 2 === 0
@@ -595,7 +670,7 @@ function Audit() {
                       setExpandedVideoId(isExpanded ? null : video.id)
                     }
                   >
-                    <td className="px-2 py-2 align-top sm:px-3">
+                    <td className="w-20 px-2 py-2 align-top sm:px-3">
                       <div className="relative w-[120px] overflow-hidden rounded-md">
                         <img
                           src={`https://img.youtube.com/vi/${video.youtube_id}/default.jpg`}
@@ -609,13 +684,19 @@ function Audit() {
                         </span>
                       </div>
                     </td>
-                    <td className="w-full max-w-0 px-2 py-2 align-top text-sm font-medium text-gray-900 sm:px-3">
-                      <div className="truncate">{video.title_current}</div>
+                    <td className="w-auto max-w-0 overflow-hidden px-2 py-2 align-top text-sm font-medium text-gray-900 sm:px-3">
+                      <Link
+                        to={`/video/${video.youtube_id}`}
+                        onClick={(event) => event.stopPropagation()}
+                        className="block truncate text-gray-900 no-underline hover:underline"
+                      >
+                        {video.title_current}
+                      </Link>
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2 align-top text-sm text-gray-600 sm:px-3">{formatPublishedDate(video.published_at)}</td>
-                    <td className="whitespace-nowrap px-2 py-2 align-top text-sm text-gray-600 sm:px-3">{formatAge(video.published_at)}</td>
-                    <td className="whitespace-nowrap px-2 py-2 align-top text-sm text-gray-600 sm:px-3">{formatViews(video.view_count)}</td>
-                    <td className="whitespace-nowrap px-2 py-2 align-top sm:px-3">
+                    <td className="w-32 whitespace-nowrap px-2 py-2 align-top text-sm text-gray-600 sm:px-3">{formatPublishedDate(video.published_at)}</td>
+                    <td className="w-24 whitespace-nowrap px-2 py-2 align-top text-sm text-gray-600 sm:px-3">{formatAge(video.published_at)}</td>
+                    <td className="w-24 whitespace-nowrap px-2 py-2 align-top text-sm text-gray-600 sm:px-3">{formatViews(video.view_count)}</td>
+                    <td className="w-28 whitespace-nowrap px-2 py-2 align-top sm:px-3">
                       {performance.label === '—' ? (
                         <span className="text-sm text-gray-400">—</span>
                       ) : (
@@ -624,7 +705,7 @@ function Audit() {
                         </span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2 align-top sm:px-3">
+                    <td className="w-20 whitespace-nowrap px-2 py-2 align-top sm:px-3">
                       {unscored ? (
                         <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
                           N/A
@@ -635,17 +716,17 @@ function Audit() {
                         </span>
                       )}
                     </td>
-                    <td className="px-2 py-2 align-top text-sm text-gray-700 sm:px-3">
+                    <td className="w-40 px-2 py-2 align-top text-sm text-gray-700 sm:px-3">
                       <div className="max-w-[10rem] truncate">
                         {problemLabels[video.primary_problem] || 'Not Scored'}
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2 align-top sm:px-3">
+                    <td className="w-24 whitespace-nowrap px-2 py-2 align-top sm:px-3">
                       <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${getEvergreenClass(video.evergreen_potential)}`}>
                         {evergreenLabels[video.evergreen_potential] || 'Low'}
                       </span>
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2 align-top text-sm text-gray-600 sm:px-3">
+                    <td className="w-28 whitespace-nowrap px-2 py-2 align-top text-sm text-gray-600 sm:px-3">
                       <div className="inline-flex items-center gap-2">
                         <span>{statusLabels[video.audit_status] || 'Pending'}</span>
                         {video.audit_status === 'applied' ? (
@@ -656,7 +737,7 @@ function Audit() {
                         ) : null}
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2 align-top sm:px-3">
+                    <td className="w-24 whitespace-nowrap px-2 py-2 align-top sm:px-3">
                       <button
                         type="button"
                         onClick={(event) => handleScoreVideo(event, video.youtube_id)}
@@ -674,6 +755,31 @@ function Audit() {
                         <div className="space-y-4 rounded-lg bg-gray-50 p-4">
                           <div>
                             <strong className="text-sm text-gray-900">Score Breakdown</strong>
+                            {Number(video.scoring_version) === 2 ? (
+                              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                                {[
+                                  { label: 'Keyword Score', value: video.keyword_score },
+                                  { label: 'Clarity Score', value: video.clarity_score },
+                                  { label: 'Evergreen Score', value: video.evergreen_score }
+                                ].map((item) => (
+                                  <div
+                                    key={item.label}
+                                    className={`rounded-lg px-4 py-3 ${getHundredScoreClass(item.value)}`}
+                                  >
+                                    <p className="text-xs font-semibold uppercase tracking-wide">
+                                      {item.label}
+                                    </p>
+                                    <p className="mt-2 text-2xl font-semibold">
+                                      {Math.round(Number(item.value || 0))}/100
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="mt-3 text-sm font-medium text-slate-500">
+                                Legacy score (v1)
+                              </p>
+                            )}
                             <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                               <div className="rounded-lg bg-white p-4 ring-1 ring-gray-200">
                                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Base Score</p>
@@ -729,6 +835,61 @@ function Audit() {
                               {video.audit_score_reason || 'Scoring failed'}
                             </blockquote>
                           </div>
+                          {explanation ? (
+                            <div className="space-y-4 rounded-2xl bg-white p-4 ring-1 ring-gray-200">
+                              <blockquote className="rounded-2xl border-l-4 border-blue-500 bg-blue-50 px-4 py-4 text-sm leading-6 text-blue-900">
+                                {explanation.audit_score_reason}
+                              </blockquote>
+                              <div className="grid gap-4 md:grid-cols-2">
+                                <div>
+                                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                    Keyword Quality
+                                  </div>
+                                  <p className="mt-2 text-sm text-gray-700">
+                                    {explanation.keyword_quality_notes || '—'}
+                                  </p>
+                                </div>
+                                <div>
+                                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                    Title Clarity
+                                  </div>
+                                  <p className="mt-2 text-sm text-gray-700">
+                                    {explanation.title_clarity_notes || '—'}
+                                  </p>
+                                </div>
+                                <div>
+                                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                    Evergreen Potential
+                                  </div>
+                                  <p className="mt-2 text-sm text-gray-700">
+                                    {explanation.evergreen_notes || '—'}
+                                  </p>
+                                </div>
+                                <div>
+                                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                    CTR Assessment
+                                  </div>
+                                  <p className="mt-2 text-sm text-gray-700">
+                                    {explanation.ctr_assessment || '—'}
+                                  </p>
+                                </div>
+                              </div>
+                              <p className="text-sm italic text-gray-500">
+                                {explanation.relative_performance_note || '—'}
+                              </p>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(event) => handleExplainScore(event, video)}
+                              disabled={explainingVideoId === video.youtube_id}
+                              className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-black disabled:cursor-wait disabled:bg-slate-500"
+                            >
+                              {explainingVideoId === video.youtube_id
+                                ? 'Getting explanation...'
+                                : 'Explain Score'}
+                            </button>
+                          )}
                           <div className="flex flex-wrap gap-3">
                             <button
                               type="button"
